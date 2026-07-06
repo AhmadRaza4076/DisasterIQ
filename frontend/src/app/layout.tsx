@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Disaster Damage Triage | DarkNem",
-  description: "Satellite building damage assessment for emergency response",
+  title: "DisasterIQ | Satellite Damage Triage — DarkNem",
+  description:
+    "Pakistan-focused satellite building damage triage for emergency coordinators. AMD Hackathon ACT II.",
 };
 
 export default function RootLayout({

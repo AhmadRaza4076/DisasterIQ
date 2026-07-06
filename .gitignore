@@ -7,7 +7,10 @@ node_modules/
 .next/
 data/test/
 data/_demo_staging/
+data/curate_log.txt
 backend/outputs/
+backend/smoke_analyze.json
+backend/smoke_brief.json
 backend/app/uploads/
 *.tar
 *.tar.gz

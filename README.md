@@ -105,7 +105,8 @@ See `data/demo/manifest.json` for the exact 10 pair IDs.
 
 - Friend setup: [docs/FRIEND_SETUP.md](docs/FRIEND_SETUP.md)
 - Work split: [docs/TEAM_ROLES.md](docs/TEAM_ROLES.md)
-- Push to GitHub: [docs/GITHUB_SETUP.md](docs/GITHUB_SETUP.md)
+- Disk / Docker on D: [docs/DISK_SPACE.md](docs/DISK_SPACE.md)
+- Submission checklist: [docs/SUBMISSION.md](docs/SUBMISSION.md)
 
 ## License
 

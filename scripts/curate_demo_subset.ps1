@@ -3,11 +3,18 @@
 # Option B: pass -TarPath to pull only manifest pairs from the archive (no full extract)
 
 param(
-    [string]$TestDir = (Join-Path $PSScriptRoot "..\data\test"),
-    [string]$DemoDir = (Join-Path $PSScriptRoot "..\data\demo"),
-    [string]$Manifest = (Join-Path $PSScriptRoot "..\data\demo\manifest.json"),
+    [string]$TestDir = "",
+    [string]$DemoDir = "",
+    [string]$Manifest = "",
     [string]$TarPath = ""
 )
+
+$ErrorActionPreference = "Stop"
+if (-not $TestDir) { $TestDir = Join-Path $PSScriptRoot "..\data\test" }
+if (-not $DemoDir) { $DemoDir = Join-Path $PSScriptRoot "..\data\demo" }
+if (-not $Manifest) { $Manifest = Join-Path $PSScriptRoot "..\data\demo\manifest.json" }
+$DemoDir = (Resolve-Path $DemoDir).Path
+$Manifest = (Resolve-Path $Manifest).Path
 
 $manifest = Get-Content $Manifest -Raw | ConvertFrom-Json
 foreach ($sub in @("images", "labels", "targets")) {
@@ -28,12 +35,13 @@ function Copy-PairFiles {
         @{ Sub = "targets"; Name = "${Base}_post_disaster_target.png" }
     )
     foreach ($f in $files) {
-        $src = Join-Path $Root $f.Sub $f.Name
+        $src = Join-Path (Join-Path $Root $f.Sub) $f.Name
+        $dest = Join-Path (Join-Path $DemoDir $f.Sub) $f.Name
         if (-not (Test-Path $src)) {
             Write-Error "Missing $src"
             exit 1
         }
-        Copy-Item $src (Join-Path $DemoDir $f.Sub) -Force
+        Copy-Item $src $dest -Force
     }
     Write-Host "Copied pair: $Base"
 }
@@ -55,9 +63,9 @@ if ($TarPath -and (Test-Path $TarPath)) {
     try {
         foreach ($base in $manifest.pairs) {
             foreach ($member in (Get-MemberPaths $base)) {
-                & tar -xf $TarPath -C $staging $member 2>&1 | Out-Null
+                $tarOut = & tar -xf $TarPath -C $staging $member 2>&1
                 if ($LASTEXITCODE -ne 0) {
-                    Write-Error "Failed to extract $member from archive"
+                    Write-Error "Failed to extract ${member}: $tarOut"
                     exit 1
                 }
             }
