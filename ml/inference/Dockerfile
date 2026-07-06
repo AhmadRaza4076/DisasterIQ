@@ -25,10 +25,11 @@ WORKDIR /home/appuser
 RUN mkdir -p ~/code/xview-2/ ~/submission/ ~/output/
 
 # Use apt python3-opencv (no pip opencv — avoids 60+ min source compile)
+# Pin keras 2.2.5 for TensorFlow 1.15 compatibility
 RUN pip install --user \
     matplotlib tqdm libtiff scipy 'Pillow<10' scikit-image \
-    IPython keras simplification scikit-learn chainer \
-    tensorboard tensorboardX && \
+    IPython 'keras==2.2.5' simplification scikit-learn chainer \
+    tensorboard tensorboardX lxml xmljson Shapely && \
     pip install --user --no-deps imantics imgaug && \
     (pip install --user 'geopandas<0.11' || pip install --user geopandas)
 

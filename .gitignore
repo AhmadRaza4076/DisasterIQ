@@ -16,4 +16,4 @@ backend/app/uploads/
 *.tar.gz
 backend/.venv/
 ml/xview2-baseline/
-ml/build_log.txt
+ml/build_log*.txt

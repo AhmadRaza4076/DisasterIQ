@@ -79,14 +79,13 @@ def run_stub_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path:
 
 
 def run_docker_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    loc_out = out_dir / "localization.png"
-    cls_out = out_dir / "classification.png"
-
     submission_dir = out_dir / "submission"
     output_mount = out_dir / "docker_output"
     submission_dir.mkdir(parents=True, exist_ok=True)
     output_mount.mkdir(parents=True, exist_ok=True)
+
+    loc_out = output_mount / "localization.png"
+    cls_out = output_mount / "classification.png"
 
     shutil.copy2(pre_path, submission_dir / pre_path.name)
     shutil.copy2(post_path, submission_dir / post_path.name)
