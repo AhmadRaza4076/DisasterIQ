@@ -1,9 +1,23 @@
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ENV_FILE = _REPO_ROOT / ".env"
+
+
+def _resolve_against_repo_root(value: Path) -> Path:
+    """Make relative paths (e.g. from .env) resolve against the repo root.
+
+    The backend can be started with cwd=backend/, so a relative path like
+    ``ml/checkpoints/damage_best.ckpt`` from .env must not be resolved
+    against the current working directory.
+    """
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return (_REPO_ROOT / path).resolve()
 
 
 class Settings(BaseSettings):
@@ -27,6 +41,13 @@ class Settings(BaseSettings):
     grid_rows: int = 4
     grid_cols: int = 4
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    @model_validator(mode="after")
+    def _resolve_relative_paths(self) -> "Settings":
+        self.demo_data_dir = _resolve_against_repo_root(self.demo_data_dir)
+        self.pytorch_checkpoint_path = _resolve_against_repo_root(self.pytorch_checkpoint_path)
+        self.pytorch_repo_dir = _resolve_against_repo_root(self.pytorch_repo_dir)
+        return self
 
 
 settings = Settings()
