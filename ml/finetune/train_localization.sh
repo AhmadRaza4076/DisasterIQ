@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Stage 1: building localization on hackathon train subset
 set -euo pipefail
-cd "$(dirname "$0")/../pytorch-xview2"
+FINETUNE_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$FINETUNE_DIR/../pytorch-xview2"
+
+eval "$(python3 "$FINETUNE_DIR/load_config.py" localization)"
 
 DATA_DIR="${DATA_DIR:-/data/train_subset}"
 RESULTS_DIR="${RESULTS_DIR:-/results/loc}"
-EPOCHS="${EPOCHS:-10}"
-BATCH_SIZE="${BATCH_SIZE:-8}"
-ENCODER="${ENCODER:-resnet50}"
 
 python main.py \
   --exec_mode train \

@@ -29,6 +29,7 @@ class Zone(BaseModel):
     priority_score: float
     centroid_lat: float | None = None
     centroid_lng: float | None = None
+    confidence: float | None = None
 
 
 class AnalysisSummary(BaseModel):

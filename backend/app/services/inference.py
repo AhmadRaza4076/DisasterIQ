@@ -132,7 +132,7 @@ def run_pytorch_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Pat
         )
     out_dir.mkdir(parents=True, exist_ok=True)
     out_mask = out_dir / f"{uuid.uuid4().hex}_mask.png"
-    infer_script = settings.pytorch_repo_dir.parent / "pytorch-inference" / "infer_pair.py"
+    infer_script = settings.pytorch_inference_dir / "infer_pair.py"
     if not infer_script.exists():
         raise RuntimeError(f"Missing inference script: {infer_script}")
 

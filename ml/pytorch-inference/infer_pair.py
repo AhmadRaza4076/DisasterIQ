@@ -7,6 +7,7 @@ Creates a temporary holdout layout and shells out to michal2409/xView2 main.py.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -82,13 +83,12 @@ def infer_pair(
         "0",
     ]
     env = {
-        **dict(__import__("os").environ),
+        **os.environ,
         "PYTHONPATH": str(XVIEW2_ROOT),
     }
-    # Training datasets read hardcoded docker path; patch for local runs
     index_src = XVIEW2_ROOT / "utils" / "index.csv"
     if index_src.exists():
-        env["XVIEW2_INDEX_CSV"] = str(index_src)
+        env["XVIEW2_INDEX_CSV"] = str(index_src.resolve())
 
     subprocess.run(cmd, check=True, cwd=str(XVIEW2_ROOT), env=env)
 

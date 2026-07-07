@@ -31,6 +31,16 @@ If `False`, install ROCm PyTorch per AMD docs before training.
 
 ## Training pipeline
 
+### CPU prep (before AMD GPU window)
+
+```powershell
+python ml\finetune\patch_pytorch_xview2.py
+python scripts\generate_subset_index.py --data-dir data\train_subset
+python scripts\test_pytorch_dataset.py --data-dir data\train_subset
+```
+
+`generate_subset_index.py` needs `opencv-python`, `pandas`, `joblib`, `tqdm` (same as xView2 training env).
+
 ### Sync data to GPU instance
 
 ```bash
@@ -44,12 +54,12 @@ cd DisasterIQ
 bash ml/finetune/run_amd_pipeline.sh
 ```
 
-Stages:
-1. **Localization** (`--type pre`) — 10 epochs, ResNet50
-2. **Damage** (`--type post`, siamese) — 20 epochs, loads loc checkpoint
+Stages (after patch + index.csv inside `run_amd_pipeline.sh`):
+1. **Localization** (`--type pre`) — epochs/batch from `config_subset.yaml`
+2. **Damage** (`--type post`, siamese) — loads loc checkpoint
 3. **Eval** on `data/test/`
 
-Config: `ml/finetune/config_subset.yaml`
+Hyperparameters: `ml/finetune/config_subset.yaml` via `load_config.py` (`pip install pyyaml`)
 
 ### ROCm Docker alternative
 

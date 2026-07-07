@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     pytorch_checkpoint_path: Path = _REPO_ROOT / "ml" / "checkpoints" / "damage_best.ckpt"
     pytorch_docker_image: str = "darknem-xview2-pytorch"
     pytorch_repo_dir: Path = _REPO_ROOT / "ml" / "pytorch-xview2"
+    pytorch_inference_dir: Path = _REPO_ROOT / "ml" / "pytorch-inference"
     upload_dir: Path = Path(__file__).resolve().parents[1] / "uploads"
     output_dir: Path = Path(__file__).resolve().parents[1] / "outputs"
     grid_rows: int = 4
@@ -47,6 +48,7 @@ class Settings(BaseSettings):
         self.demo_data_dir = _resolve_against_repo_root(self.demo_data_dir)
         self.pytorch_checkpoint_path = _resolve_against_repo_root(self.pytorch_checkpoint_path)
         self.pytorch_repo_dir = _resolve_against_repo_root(self.pytorch_repo_dir)
+        self.pytorch_inference_dir = _resolve_against_repo_root(self.pytorch_inference_dir)
         return self
 
 

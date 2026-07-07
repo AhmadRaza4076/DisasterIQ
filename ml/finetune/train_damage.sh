@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Stage 2: damage classification fine-tune (siamese U-Net)
 set -euo pipefail
-cd "$(dirname "$0")/../pytorch-xview2"
+FINETUNE_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$FINETUNE_DIR/../pytorch-xview2"
+
+eval "$(python3 "$FINETUNE_DIR/load_config.py" damage)"
 
 DATA_DIR="${DATA_DIR:-/data/train_subset}"
 RESULTS_DIR="${RESULTS_DIR:-/results/dmg}"
 CKPT_PRE="${CKPT_PRE:-/results/loc/checkpoints/best.ckpt}"
-EPOCHS="${EPOCHS:-20}"
-BATCH_SIZE="${BATCH_SIZE:-4}"
-ENCODER="${ENCODER:-resnet50}"
 
 if [[ ! -f "$CKPT_PRE" ]]; then
   echo "Missing localization checkpoint: $CKPT_PRE"
