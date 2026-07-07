@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import BriefPanel from "@/components/BriefPanel";
 import DamageCanvas from "@/components/DamageCanvas";
 import ZoneTable from "@/components/ZoneTable";
@@ -10,9 +11,14 @@ import {
   demoImageUrl,
   fetchBrief,
   fetchDemoPairs,
+  fetchFieldReport,
+  fetchHealth,
   type AnalysisResult,
   type DemoPair,
+  type HealthResponse,
 } from "@/lib/api";
+
+const ZoneMap = dynamic(() => import("@/components/ZoneMap"), { ssr: false });
 
 const PAKISTAN_CONTEXT =
   "Pakistan disaster response: 2022 monsoon floods and earthquake-affected areas. " +
@@ -28,11 +34,17 @@ export default function HomePage() {
   const [preUrl, setPreUrl] = useState<string>("");
   const [brief, setBrief] = useState<string | null>(null);
   const [briefSource, setBriefSource] = useState<string | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [briefLoading, setBriefLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
+    fetchHealth()
+      .then(setHealth)
+      .catch(() => setHealth(null));
     fetchDemoPairs()
       .then((p) => {
         setPairs(p);
@@ -45,6 +57,11 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     setBrief(null);
+    setLoadingStage(
+      health?.inference_mode === "docker"
+        ? "Model inference (~2 min)…"
+        : "Scoring damage zones…"
+    );
     try {
       let result: AnalysisResult;
       if (preFile && postFile) {
@@ -64,6 +81,7 @@ export default function HomePage() {
       setAnalysis(result);
 
       setBriefLoading(true);
+      setLoadingStage("Generating situation brief…");
       const briefResp = await fetchBrief(result, PAKISTAN_CONTEXT);
       setBrief(briefResp.brief);
       setBriefSource(briefResp.source);
@@ -72,8 +90,28 @@ export default function HomePage() {
     } finally {
       setLoading(false);
       setBriefLoading(false);
+      setLoadingStage(null);
     }
-  }, [preFile, postFile, selectedPair, pairs]);
+  }, [preFile, postFile, selectedPair, pairs, health?.inference_mode]);
+
+  const downloadReport = useCallback(async () => {
+    if (!analysis || !brief) return;
+    setReportLoading(true);
+    setError(null);
+    try {
+      const blob = await fetchFieldReport(analysis, brief);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `disasteriq-report-${analysis.pair_id || "analysis"}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setReportLoading(false);
+    }
+  }, [analysis, brief]);
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
@@ -83,6 +121,11 @@ export default function HomePage() {
           <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
             AMD ACT II · Unicorn
           </span>
+          {health && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+              API {health.status} · {health.inference_mode} · {health.demo_pairs} pairs
+            </span>
+          )}
         </div>
         <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
           DisasterIQ
@@ -148,8 +191,12 @@ export default function HomePage() {
             disabled={loading || (pairs.length === 0 && !(preFile && postFile))}
             className="w-full rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-4 py-2.5 font-medium text-white transition shadow-lg shadow-amber-900/20"
           >
-            {loading ? "Analyzing…" : "Analyze & brief"}
+            {loading ? (loadingStage ?? "Analyzing…") : "Analyze & brief"}
           </button>
+
+          {loadingStage && (
+            <p className="text-xs text-amber-400/90 animate-pulse">{loadingStage}</p>
+          )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
@@ -196,7 +243,17 @@ export default function HomePage() {
           </div>
 
           <ZoneTable analysis={analysis} />
+          <ZoneMap analysis={analysis} />
           <BriefPanel brief={brief} source={briefSource} loading={briefLoading} />
+          {analysis && brief && (
+            <button
+              onClick={downloadReport}
+              disabled={reportLoading}
+              className="rounded-lg border border-slate-600 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-4 py-2.5 text-sm font-medium text-slate-200 transition"
+            >
+              {reportLoading ? "Generating PDF…" : "Download field report (PDF)"}
+            </button>
+          )}
         </div>
       </section>
     </main>

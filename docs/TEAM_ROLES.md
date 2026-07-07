@@ -35,10 +35,11 @@ Agreed division of work for two developers. Update this file when ownership chan
 
 ## Not started (track in issues)
 
-- [ ] ML image `darknem-xview2-inference` built and tagged
+- [x] ML image `darknem-xview2-inference` built and tagged
+- [x] Public GitHub repo pushed (required for submission)
+- [x] Demo data committed (`data/demo/`, 10 pairs)
 - [ ] Train data verified (`a20ebbfb7eb3452785b63ad02ffd1e16`)
-- [ ] Fine-tuning on earthquake + flood + wildfire subset
-- [ ] Public GitHub repo pushed (required for submission)
+- [ ] Fine-tuning on earthquake + flood + wildfire subset (optional — baseline ships)
 - [ ] Demo video + lablab submission
 
 ## Architecture reminder

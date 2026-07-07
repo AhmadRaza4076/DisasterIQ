@@ -5,8 +5,8 @@ Step-by-step guide to replicate the dev environment and run the app locally.
 ## 1. Get the code
 
 ```powershell
-git clone https://github.com/<ORG>/satellite-disaster-triage.git
-cd satellite-disaster-triage
+git clone https://github.com/AhmadRaza4076/DisasterIQ.git
+cd DisasterIQ
 ```
 
 If the repo is not public yet, ask Ahmad for a zip (exclude `data/test/`, `backend/.venv/`, `frontend/node_modules/`).

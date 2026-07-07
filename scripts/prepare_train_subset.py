@@ -47,7 +47,7 @@ def main() -> None:
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
     for d in xbd_root.iterdir():
-        if d.is_dir() and any(d.name.startswith(p.split("_")[0]) or d.name == p for p in KEEP_PREFIXES):
+        if d.is_dir() and any(d.name.startswith(p) or d.name == p for p in KEEP_PREFIXES):
             dest = out / d.name
             if dest.exists():
                 shutil.rmtree(dest)

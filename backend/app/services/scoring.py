@@ -8,8 +8,15 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import label
 
-from app.schemas import AnalysisResult, AnalysisSummary, DamageCounts, Zone
+from app.schemas import (
+    AnalysisResult,
+    AnalysisSummary,
+    BuildingCounts,
+    DamageCounts,
+    Zone,
+)
 
 # xView2 class pixel values
 CLASS_NAMES = {
@@ -31,6 +38,13 @@ OVERLAY_COLORS = {
 
 WEIGHTS = {1: 1.0, 2: 2.0, 3: 3.5, 4: 5.0}
 
+_CLASS_TO_FIELD = {
+    1: "none",
+    2: "minor",
+    3: "major",
+    4: "destroyed",
+}
+
 
 def load_mask(path: Path) -> np.ndarray:
     with Image.open(path) as img:
@@ -51,17 +65,39 @@ def counts_for_region(mask: np.ndarray) -> DamageCounts:
     )
 
 
-def priority_score(counts: DamageCounts) -> float:
-    total = counts.none + counts.minor + counts.major + counts.destroyed
-    if total == 0:
+def building_counts_for_region(mask: np.ndarray) -> BuildingCounts:
+    """Count distinct connected components (buildings) per damage class."""
+    counts = BuildingCounts()
+    for cls, field in _CLASS_TO_FIELD.items():
+        _, num = label(mask == cls)
+        setattr(counts, field, int(num))
+    return counts
+
+
+def priority_score(counts: BuildingCounts | DamageCounts) -> float:
+    total_building = counts.none + counts.minor + counts.major + counts.destroyed
+    if total_building == 0:
         return 0.0
     weighted = (
-        counts.none * WEIGHTS[1]
-        + counts.minor * WEIGHTS[2]
+        counts.minor * WEIGHTS[2]
         + counts.major * WEIGHTS[3]
         + counts.destroyed * WEIGHTS[4]
     )
-    return round((weighted / total) * 100, 2)
+    return round((weighted / (total_building * WEIGHTS[4])) * 100, 2)
+
+
+def _summary_from_buildings(all_buildings: BuildingCounts, all_pixels: DamageCounts) -> AnalysisSummary:
+    total_buildings = (
+        all_buildings.none + all_buildings.minor + all_buildings.major + all_buildings.destroyed
+    )
+    total_pixels = all_pixels.none + all_pixels.minor + all_pixels.major + all_pixels.destroyed
+    return AnalysisSummary(
+        total_building_pixels=total_pixels,
+        total_buildings=total_buildings,
+        destroyed_pct=round(all_buildings.destroyed / total_buildings * 100, 2) if total_buildings else 0.0,
+        major_pct=round(all_buildings.major / total_buildings * 100, 2) if total_buildings else 0.0,
+        minor_pct=round(all_buildings.minor / total_buildings * 100, 2) if total_buildings else 0.0,
+    )
 
 
 def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> AnalysisResult:
@@ -78,16 +114,23 @@ def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> Analy
             y1 = h if row == grid_rows - 1 else (row + 1) * cell_h
             x1 = w if col == grid_cols - 1 else (col + 1) * cell_w
             region = mask[y0:y1, x0:x1]
-            counts = counts_for_region(region)
-            total_building = counts.none + counts.minor + counts.major + counts.destroyed
-            if total_building == 0:
+            pixel_counts = counts_for_region(region)
+            building_counts = building_counts_for_region(region)
+            total_buildings = (
+                building_counts.none
+                + building_counts.minor
+                + building_counts.major
+                + building_counts.destroyed
+            )
+            if total_buildings == 0:
                 continue
             zones.append(
                 Zone(
                     rank=0,
                     bbox=[int(x0), int(y0), int(x1 - x0), int(y1 - y0)],
-                    damage_counts=counts,
-                    priority_score=priority_score(counts),
+                    damage_counts=pixel_counts,
+                    building_counts=building_counts,
+                    priority_score=priority_score(building_counts),
                 )
             )
 
@@ -95,16 +138,9 @@ def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> Analy
     for i, zone in enumerate(zones, start=1):
         zone.rank = i
 
-    all_counts = counts_for_region(mask)
-    total_building = (
-        all_counts.none + all_counts.minor + all_counts.major + all_counts.destroyed
-    )
-    summary = AnalysisSummary(
-        total_building_pixels=total_building,
-        destroyed_pct=round(all_counts.destroyed / total_building * 100, 2) if total_building else 0.0,
-        major_pct=round(all_counts.major / total_building * 100, 2) if total_building else 0.0,
-        minor_pct=round(all_counts.minor / total_building * 100, 2) if total_building else 0.0,
-    )
+    all_pixels = counts_for_region(mask)
+    all_buildings = building_counts_for_region(mask)
+    summary = _summary_from_buildings(all_buildings, all_pixels)
 
     overlay = _build_overlay(mask)
     buf = io.BytesIO()

@@ -1,5 +1,18 @@
 # Start backend (Windows Python venv)
-$backendDir = Join-Path $PSScriptRoot "..\backend"
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$backendDir = Join-Path $repoRoot "backend"
+$envFile = Join-Path $repoRoot ".env"
+
+if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+        if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
+            $name = $matches[1].Trim()
+            $value = $matches[2].Trim()
+            Set-Item -Path "Env:$name" -Value $value
+        }
+    }
+}
+
 $venvPython = Join-Path $backendDir ".venv\Scripts\python.exe"
 $systemPython = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"
 

@@ -2,16 +2,26 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _REPO_ROOT / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE) if _ENV_FILE.exists() else None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     fireworks_api_key: str = ""
-    fireworks_model: str = "accounts/fireworks/models/llama-v3p1-8b-instruct"
-    demo_data_dir: Path = Path(__file__).resolve().parents[2] / "data" / "demo"
-    test_data_dir: Path = Path(__file__).resolve().parents[2] / "data" / "test"
-    inference_mode: str = "stub"  # stub | docker
+    fireworks_model: str = "accounts/fireworks/models/glm-5p2"
+    demo_data_dir: Path = _REPO_ROOT / "data" / "demo"
+    test_data_dir: Path = _REPO_ROOT / "data" / "test"
+    inference_mode: str = "stub"  # stub | docker | pytorch
     xview2_docker_image: str = "darknem-xview2-inference"
+    pytorch_checkpoint_path: Path = _REPO_ROOT / "ml" / "checkpoints" / "damage_best.ckpt"
+    pytorch_docker_image: str = "darknem-xview2-pytorch"
+    pytorch_repo_dir: Path = _REPO_ROOT / "ml" / "pytorch-xview2"
     upload_dir: Path = Path(__file__).resolve().parents[1] / "uploads"
     output_dir: Path = Path(__file__).resolve().parents[1] / "outputs"
     grid_rows: int = 4

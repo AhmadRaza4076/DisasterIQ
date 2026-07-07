@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -68,14 +69,14 @@ def stub_diff_mask(pre_path: Path, post_path: Path, out_path: Path) -> Path:
     return out_path
 
 
-def run_stub_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path:
+def run_stub_inference(pre_path: Path, post_path: Path, out_dir: Path) -> tuple[Path, str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     target = resolve_demo_target(post_path)
     out_path = out_dir / f"{uuid.uuid4().hex}_mask.png"
     if target is not None:
         shutil.copy2(target, out_path)
-        return out_path
-    return stub_diff_mask(pre_path, post_path, out_path)
+        return out_path, "stub-groundtruth"
+    return stub_diff_mask(pre_path, post_path, out_path), "stub-heuristic"
 
 
 def run_docker_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path:
@@ -122,10 +123,51 @@ def run_docker_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path
     raise RuntimeError("Docker inference produced no output mask")
 
 
+def run_pytorch_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path:
+    """Run fine-tuned PyTorch checkpoint via ml/pytorch-inference/infer_pair.py."""
+    if not settings.pytorch_checkpoint_path.exists():
+        raise RuntimeError(
+            f"PyTorch checkpoint not found: {settings.pytorch_checkpoint_path}. "
+            "Train on AMD GPU first (ml/finetune/run_amd_pipeline.sh)."
+        )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_mask = out_dir / f"{uuid.uuid4().hex}_mask.png"
+    infer_script = settings.pytorch_repo_dir.parent / "pytorch-inference" / "infer_pair.py"
+    if not infer_script.exists():
+        raise RuntimeError(f"Missing inference script: {infer_script}")
+
+    cmd = [
+        sys.executable,
+        str(infer_script),
+        "--pre",
+        str(pre_path.resolve()),
+        "--post",
+        str(post_path.resolve()),
+        "--checkpoint",
+        str(settings.pytorch_checkpoint_path.resolve()),
+        "--out",
+        str(out_mask.resolve()),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        raise RuntimeError(f"PyTorch inference failed: {result.stderr or result.stdout}")
+    if not out_mask.exists():
+        raise RuntimeError("PyTorch inference produced no output mask")
+    return out_mask
+
+
 def run_inference(pre_path: Path, post_path: Path, out_dir: Path) -> tuple[Path, str]:
     mode = settings.inference_mode.lower()
+    if mode == "pytorch":
+        try:
+            mask_path = run_pytorch_inference(pre_path, post_path, out_dir)
+            return mask_path, "pytorch"
+        except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            raise RuntimeError(f"PyTorch inference failed: {exc}") from exc
     if mode == "docker":
-        mask_path = run_docker_inference(pre_path, post_path, out_dir)
-        return mask_path, "docker"
-    mask_path = run_stub_inference(pre_path, post_path, out_dir)
-    return mask_path, "stub"
+        try:
+            mask_path = run_docker_inference(pre_path, post_path, out_dir)
+            return mask_path, "docker"
+        except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            raise RuntimeError(f"Docker inference failed: {exc}") from exc
+    return run_stub_inference(pre_path, post_path, out_dir)

@@ -15,10 +15,12 @@ deterministic damage zone scores from satellite imagery analysis.
 
 Rules:
 - Narrate the situation in plain language for emergency coordinators.
-- Reference zone ranks and damage counts exactly as provided.
+- Reference zone ranks and building_counts (number of structures per damage class) exactly as provided.
+- Do NOT use pixel counts (damage_counts) — only building_counts and total_buildings.
 - Do NOT change rankings, scores, or invent additional damage data.
 - Keep the brief under 250 words.
 - Mention priority zones first and recommend where to deploy resources first.
+- If centroid_lat/centroid_lng are present on a zone, mention coordinates for top zones.
 """
 
 
@@ -33,7 +35,7 @@ def _stub_brief(analysis: dict[str, Any], context: str | None) -> str:
         lines.append(f"Context: {context}")
         lines.append("")
     lines.append(
-        f"Overall: {summary.get('total_building_pixels', 0)} building pixels assessed. "
+        f"Overall: {summary.get('total_buildings', 0)} buildings assessed. "
         f"Destroyed: {summary.get('destroyed_pct', 0)}%, "
         f"Major: {summary.get('major_pct', 0)}%, "
         f"Minor: {summary.get('minor_pct', 0)}%."
@@ -41,11 +43,15 @@ def _stub_brief(analysis: dict[str, Any], context: str | None) -> str:
     lines.append("")
     lines.append("Priority zones (pre-ranked by ML):")
     for z in zones:
-        dc = z.get("damage_counts", {})
+        bc = z.get("building_counts", {})
+        coord = ""
+        lat, lng = z.get("centroid_lat"), z.get("centroid_lng")
+        if lat is not None and lng is not None:
+            coord = f" @ {lat:.5f}, {lng:.5f}"
         lines.append(
-            f"  Zone #{z.get('rank')}: score {z.get('priority_score')} — "
-            f"destroyed={dc.get('destroyed', 0)}, major={dc.get('major', 0)}, "
-            f"minor={dc.get('minor', 0)}, undamaged={dc.get('none', 0)}"
+            f"  Zone #{z.get('rank')}: score {z.get('priority_score')}{coord} — "
+            f"destroyed={bc.get('destroyed', 0)}, major={bc.get('major', 0)}, "
+            f"minor={bc.get('minor', 0)}, undamaged={bc.get('none', 0)} buildings"
         )
     lines.append("")
     lines.append(
@@ -73,13 +79,19 @@ async def generate_brief(analysis: dict[str, Any], context: str | None = None) -
         "Authorization": f"Bearer {settings.fireworks_api_key}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            "https://api.fireworks.ai/inference/v1/chat/completions",
-            json=payload,
-            headers=headers,
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                "https://api.fireworks.ai/inference/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            return BriefResponse(brief=content.strip(), source="fireworks")
+    except httpx.HTTPError:
+        return BriefResponse(
+            brief=_stub_brief(analysis, context),
+            source="fireworks-fallback",
         )
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        return BriefResponse(brief=content.strip(), source="fireworks")

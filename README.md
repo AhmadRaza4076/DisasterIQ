@@ -49,7 +49,17 @@ npm run dev
 
 Open http://localhost:3000
 
-## Docker (submission)
+**Environment file:** Copy `.env.example` to `.env` at the **repo root** (gitignored). The backend loads it automatically via `backend/app/config.py`.
+
+**Demo day (recommended):** Run the backend with `.\scripts\start-backend.ps1` (local venv), not `docker compose up`, especially when `INFERENCE_MODE=docker`. The containerized backend image does not include the Docker CLI, so ML inference from inside Compose will fail.
+
+Rehearse before recording:
+
+```powershell
+.\scripts\rehearse-demo.ps1
+```
+
+## Docker (optional full stack)
 
 Requires Docker Desktop installed.
 
@@ -63,6 +73,8 @@ docker compose --profile build-ml build ml
 docker compose up --build
 ```
 
+> **Note:** `INFERENCE_MODE=docker` requires the Docker CLI on the host. Use `start-backend.ps1` for real ML inference during demos; use Compose for frontend + stub backend smoke tests only.
+
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000
 - API docs: http://localhost:8000/docs
@@ -72,14 +84,14 @@ docker compose up --build
 | Variable | Description |
 |----------|-------------|
 | `FIREWORKS_API_KEY` | Fireworks AI API key (optional; stub used if unset) |
-| `FIREWORKS_MODEL` | Model id (default: `accounts/fireworks/models/llama-v3p1-8b-instruct`) |
+| `FIREWORKS_MODEL` | Model id (default: `accounts/fireworks/models/glm-5p2`) |
 | `DEMO_DATA_DIR` | Path to demo image pairs |
 | `INFERENCE_MODE` | `stub` (default) or `docker` |
 | `XVIEW2_DOCKER_IMAGE` | Baseline inference image name |
 
 ## ML baseline weights
 
-Pretrained weights download automatically when building the inference Docker image:
+Pretrained weights download automatically when building the inference Docker image. **TF 1.15 on ROCm is not supported** — see [ml/README.md](ml/README.md) for the framework decision before AMD GPU fine-tuning.
 
 ```powershell
 docker compose --profile build-ml build ml
@@ -106,6 +118,7 @@ See `data/demo/manifest.json` for the exact 10 pair IDs.
 - Friend setup: [docs/FRIEND_SETUP.md](docs/FRIEND_SETUP.md)
 - Work split: [docs/TEAM_ROLES.md](docs/TEAM_ROLES.md)
 - Disk / Docker on D: [docs/DISK_SPACE.md](docs/DISK_SPACE.md)
+- Data layout: [docs/DATA.md](docs/DATA.md)
 - Submission checklist: [docs/SUBMISSION.md](docs/SUBMISSION.md)
 
 ## License

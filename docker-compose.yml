@@ -14,7 +14,7 @@ services:
       - DEMO_DATA_DIR=/app/data/demo
       - INFERENCE_MODE=${INFERENCE_MODE:-stub}
       - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:-}
-      - FIREWORKS_MODEL=${FIREWORKS_MODEL:-accounts/fireworks/models/llama-v3p1-8b-instruct}
+      - FIREWORKS_MODEL=${FIREWORKS_MODEL:-accounts/fireworks/models/glm-5p2}
       - XVIEW2_DOCKER_IMAGE=${XVIEW2_DOCKER_IMAGE:-darknem-xview2-inference}
 
   frontend:

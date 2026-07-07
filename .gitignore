@@ -6,9 +6,16 @@ __pycache__/
 node_modules/
 .next/
 data/test/
-data/_demo_staging/
+data/train/
+data/train_subset/
+data/tier3/
+data/tier3_subset/
+data/_kaggle_staging/
+data/_kaggle_staging_tier3/
+data/_kaggle_staging_train-nested/
 data/curate_log.txt
 backend/outputs/
+backend/app/outputs/
 backend/smoke_analyze.json
 backend/smoke_brief.json
 backend/app/uploads/
@@ -16,4 +23,6 @@ backend/app/uploads/
 *.tar.gz
 backend/.venv/
 ml/xview2-baseline/
+ml/pytorch-xview2/
+ml/checkpoints/*.ckpt
 ml/build_log*.txt

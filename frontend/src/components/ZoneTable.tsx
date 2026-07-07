@@ -12,6 +12,7 @@ export default function ZoneTable({ analysis }: Props) {
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4">
       <h3 className="text-sm font-semibold text-slate-300 mb-3">Priority Zones</h3>
+      <p className="text-xs text-slate-500 mb-3">Counts are distinct buildings (connected structures), not pixels.</p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -29,17 +30,17 @@ export default function ZoneTable({ analysis }: Props) {
               <tr key={z.rank} className="border-b border-slate-800 text-slate-300">
                 <td className="py-2 pr-4 font-medium">#{z.rank}</td>
                 <td className="py-2 pr-4">{z.priority_score}</td>
-                <td className="py-2 pr-4 text-red-400">{z.damage_counts.destroyed}</td>
-                <td className="py-2 pr-4 text-orange-400">{z.damage_counts.major}</td>
-                <td className="py-2 pr-4 text-blue-400">{z.damage_counts.minor}</td>
-                <td className="py-2 text-green-400">{z.damage_counts.none}</td>
+                <td className="py-2 pr-4 text-red-400">{z.building_counts.destroyed}</td>
+                <td className="py-2 pr-4 text-orange-400">{z.building_counts.major}</td>
+                <td className="py-2 pr-4 text-blue-400">{z.building_counts.minor}</td>
+                <td className="py-2 text-green-400">{z.building_counts.none}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-400">
-        <div>Total building pixels: {analysis.summary.total_building_pixels}</div>
+        <div>Total buildings: {analysis.summary.total_buildings}</div>
         <div>Destroyed: {analysis.summary.destroyed_pct}%</div>
         <div>Major: {analysis.summary.major_pct}%</div>
         <div>Minor: {analysis.summary.minor_pct}%</div>
