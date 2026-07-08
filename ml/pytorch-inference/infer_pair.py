@@ -2,6 +2,11 @@
 
 Requires a trained post-disaster checkpoint (siamese, focal+dice).
 Creates a temporary holdout layout and shells out to michal2409/xView2 main.py.
+
+Per-zone confidence (mean predicted-class probability) is extracted from the
+post-softmax damage probs saved by the model and written as a sibling
+``{mask_stem}_confidence.npy``. This applies only to PyTorch inference; the
+Docker TF1.15 baseline and stub modes emit label masks only (no probabilities).
 """
 
 from __future__ import annotations
@@ -24,6 +29,17 @@ MAIN_PY = XVIEW2_ROOT / "main.py"
 
 def _dummy_mask(path: Path) -> None:
     Image.fromarray(np.zeros((1024, 1024), dtype=np.uint8)).save(path)
+
+
+def probs_to_mask_and_confidence(arr: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+    """Convert model output to class mask and per-pixel confidence map."""
+    if arr.ndim == 3:
+        mask = np.argmax(arr, axis=0).astype(np.uint8)
+        # arr is already post-softmax (model/plt.py) — do NOT re-apply softmax
+        confidence = np.take_along_axis(arr, mask[None, :, :], axis=0)[0].astype(np.float32)
+        return np.clip(mask, 0, 4), confidence
+    mask = np.clip(np.round(arr).astype(np.uint8), 0, 4)
+    return mask, None
 
 
 def infer_pair(
@@ -98,13 +114,11 @@ def infer_pair(
         raise RuntimeError(f"No damage predictions in {probs_dir}")
 
     arr = np.load(npy_files[0])
-    if arr.ndim == 3:
-        mask = np.argmax(arr, axis=0).astype(np.uint8)
-    else:
-        mask = np.round(arr).astype(np.uint8)
-    mask = np.clip(mask, 0, 4)
+    mask, confidence = probs_to_mask_and_confidence(arr)
     out_mask.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(mask, mode="L").save(out_mask)
+    if confidence is not None:
+        np.save(out_mask.parent / f"{out_mask.stem}_confidence.npy", confidence)
     return out_mask
 
 

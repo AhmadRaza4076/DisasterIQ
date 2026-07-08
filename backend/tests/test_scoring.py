@@ -12,6 +12,7 @@ from PIL import Image
 from app.schemas import BuildingCounts, DamageCounts
 from app.services.scoring import (
     building_counts_for_region,
+    confidence_for_region,
     counts_for_region,
     priority_score,
     score_mask,
@@ -73,3 +74,28 @@ def test_score_mask_handles_empty_building_mask() -> None:
     assert result.zones == []
     assert result.summary.total_building_pixels == 0
     assert result.summary.total_buildings == 0
+
+
+def test_confidence_for_region_mean_over_building_pixels() -> None:
+    mask_region = np.zeros((4, 4), dtype=np.uint8)
+    mask_region[1:3, 1:3] = 4
+    confidence_region = np.full((4, 4), 0.1, dtype=np.float32)
+    confidence_region[1:3, 1:3] = 0.9
+    assert confidence_for_region(confidence_region, mask_region) == pytest.approx(0.9)
+
+
+def test_score_mask_populates_zone_confidence_from_npy() -> None:
+    mask = np.zeros((8, 8), dtype=np.uint8)
+    mask[0:4, 0:4] = 4
+    confidence = np.full((8, 8), 0.2, dtype=np.float32)
+    confidence[0:4, 0:4] = 0.8
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "mask.png"
+        conf_path = Path(tmp) / "mask_confidence.npy"
+        Image.fromarray(mask, mode="L").save(path)
+        np.save(conf_path, confidence)
+        result = score_mask(path, grid_rows=2, grid_cols=2, confidence_path=conf_path)
+
+    assert len(result.zones) == 1
+    assert result.zones[0].confidence == pytest.approx(0.8)

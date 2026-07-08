@@ -51,6 +51,15 @@ def load_mask(path: Path) -> np.ndarray:
         return np.array(img.convert("L"), dtype=np.uint8)
 
 
+def load_confidence(path: Path, mask_shape: tuple[int, ...]) -> np.ndarray:
+    confidence = np.load(path)
+    if confidence.shape != mask_shape:
+        raise ValueError(
+            f"Confidence shape {confidence.shape} does not match mask shape {mask_shape}"
+        )
+    return confidence
+
+
 def counts_for_region(mask: np.ndarray) -> DamageCounts:
     building = mask > 0
     if not building.any():
@@ -72,6 +81,14 @@ def building_counts_for_region(mask: np.ndarray) -> BuildingCounts:
         _, num = label(mask == cls)
         setattr(counts, field, int(num))
     return counts
+
+
+def confidence_for_region(confidence: np.ndarray, mask_region: np.ndarray) -> float | None:
+    """Mean predicted-class probability over building pixels in a zone."""
+    building = mask_region > 0
+    if not building.any():
+        return None
+    return round(float(confidence[building].mean()), 4)
 
 
 def priority_score(counts: BuildingCounts | DamageCounts) -> float:
@@ -100,8 +117,16 @@ def _summary_from_buildings(all_buildings: BuildingCounts, all_pixels: DamageCou
     )
 
 
-def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> AnalysisResult:
+def score_mask(
+    mask_path: Path,
+    grid_rows: int = 4,
+    grid_cols: int = 4,
+    confidence_path: Path | None = None,
+) -> AnalysisResult:
     mask = load_mask(mask_path)
+    confidence: np.ndarray | None = None
+    if confidence_path is not None and confidence_path.exists():
+        confidence = load_confidence(confidence_path, mask.shape)
     h, w = mask.shape
     cell_h = max(1, h // grid_rows)
     cell_w = max(1, w // grid_cols)
@@ -124,6 +149,9 @@ def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> Analy
             )
             if total_buildings == 0:
                 continue
+            zone_confidence = None
+            if confidence is not None:
+                zone_confidence = confidence_for_region(confidence[y0:y1, x0:x1], region)
             zones.append(
                 Zone(
                     rank=0,
@@ -131,6 +159,7 @@ def score_mask(mask_path: Path, grid_rows: int = 4, grid_cols: int = 4) -> Analy
                     damage_counts=pixel_counts,
                     building_counts=building_counts,
                     priority_score=priority_score(building_counts),
+                    confidence=zone_confidence,
                 )
             )
 

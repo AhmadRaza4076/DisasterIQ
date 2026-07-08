@@ -51,7 +51,7 @@ def eval_pair(pair_id: str, modes: list[str]) -> dict:
 
     if "pytorch" in modes:
         try:
-            pred_path = run_pytorch_inference(pre, post, out_dir / "pytorch")
+            pred_path, _ = run_pytorch_inference(pre, post, out_dir / "pytorch")
             pred = np.array(Image.open(pred_path).convert("L"))
             row["pytorch_iou"] = round(mask_iou(pred, gt), 3) if gt is not None else None
         except Exception as exc:  # noqa: BLE001

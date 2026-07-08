@@ -122,6 +122,8 @@ Restart backend and compare:
 .\backend\.venv\Scripts\python.exe scripts\compare_models.py --modes docker pytorch
 ```
 
+With `INFERENCE_MODE=pytorch`, ranked zones include per-zone `confidence` (mean predicted-class probability over building pixels). Docker baseline and stub modes leave `confidence` null — only the fine-tuned PyTorch path exposes softmax probabilities.
+
 ## 6. What success looks like for judges
 
 Minimum (already achievable):

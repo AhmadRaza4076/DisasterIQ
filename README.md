@@ -88,8 +88,11 @@ docker compose up --build
 | `FIREWORKS_API_KEY` | Fireworks AI API key (optional; stub used if unset) |
 | `FIREWORKS_MODEL` | Model id (default: `accounts/fireworks/models/glm-5p2`) |
 | `DEMO_DATA_DIR` | Path to demo image pairs |
-| `INFERENCE_MODE` | `stub` (default) or `docker` |
+| `INFERENCE_MODE` | `stub` (default), `docker`, or `pytorch` |
 | `XVIEW2_DOCKER_IMAGE` | Baseline inference image name |
+| `PYTORCH_CHECKPOINT_PATH` | Fine-tuned checkpoint for `INFERENCE_MODE=pytorch` |
+
+**Per-zone confidence:** When `INFERENCE_MODE=pytorch`, each ranked zone includes `confidence` (mean predicted-class probability over building pixels, from post-softmax model output). Docker TF1.15 baseline and stub modes return `confidence: null` — those paths only emit label masks, not probabilities.
 
 ## ML baseline weights
 

@@ -105,13 +105,14 @@ async def analyze(
             raise HTTPException(status_code=400, detail="Image exceeds 25 MB upload limit")
 
     try:
-        mask_path, mode = run_inference(pre_path, post_path, out_dir)
+        mask_path, mode, confidence_path = run_inference(pre_path, post_path, out_dir)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     result = score_mask(
         mask_path,
         grid_rows=settings.grid_rows,
         grid_cols=settings.grid_cols,
+        confidence_path=confidence_path,
     )
     result.inference_mode = mode
     result.pair_id = demo_pair_id or pre_path.stem.replace("_pre_disaster", "")

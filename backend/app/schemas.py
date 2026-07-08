@@ -29,7 +29,10 @@ class Zone(BaseModel):
     priority_score: float
     centroid_lat: float | None = None
     centroid_lng: float | None = None
-    confidence: float | None = None
+    confidence: float | None = Field(
+        default=None,
+        description="Mean predicted-class probability over building pixels (PyTorch mode only)",
+    )
 
 
 class AnalysisSummary(BaseModel):

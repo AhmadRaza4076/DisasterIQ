@@ -14,6 +14,10 @@ from PIL import Image
 from app.config import settings
 
 
+def _confidence_path_for_mask(mask_path: Path) -> Path:
+    return mask_path.parent / f"{mask_path.stem}_confidence.npy"
+
+
 def list_demo_pairs() -> list[dict[str, str]]:
     images_dir = settings.demo_data_dir / "images"
     if not images_dir.exists():
@@ -123,7 +127,7 @@ def run_docker_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path
     raise RuntimeError("Docker inference produced no output mask")
 
 
-def run_pytorch_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Path:
+def run_pytorch_inference(pre_path: Path, post_path: Path, out_dir: Path) -> tuple[Path, Path | None]:
     """Run fine-tuned PyTorch checkpoint via ml/pytorch-inference/infer_pair.py."""
     if not settings.pytorch_checkpoint_path.exists():
         raise RuntimeError(
@@ -153,21 +157,23 @@ def run_pytorch_inference(pre_path: Path, post_path: Path, out_dir: Path) -> Pat
         raise RuntimeError(f"PyTorch inference failed: {result.stderr or result.stdout}")
     if not out_mask.exists():
         raise RuntimeError("PyTorch inference produced no output mask")
-    return out_mask
+    conf_path = _confidence_path_for_mask(out_mask)
+    return out_mask, conf_path if conf_path.exists() else None
 
 
-def run_inference(pre_path: Path, post_path: Path, out_dir: Path) -> tuple[Path, str]:
+def run_inference(pre_path: Path, post_path: Path, out_dir: Path) -> tuple[Path, str, Path | None]:
     mode = settings.inference_mode.lower()
     if mode == "pytorch":
         try:
-            mask_path = run_pytorch_inference(pre_path, post_path, out_dir)
-            return mask_path, "pytorch"
+            mask_path, confidence_path = run_pytorch_inference(pre_path, post_path, out_dir)
+            return mask_path, "pytorch", confidence_path
         except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
             raise RuntimeError(f"PyTorch inference failed: {exc}") from exc
     if mode == "docker":
         try:
             mask_path = run_docker_inference(pre_path, post_path, out_dir)
-            return mask_path, "docker"
+            return mask_path, "docker", None
         except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
             raise RuntimeError(f"Docker inference failed: {exc}") from exc
-    return run_stub_inference(pre_path, post_path, out_dir)
+    mask_path, stub_mode = run_stub_inference(pre_path, post_path, out_dir)
+    return mask_path, stub_mode, None
