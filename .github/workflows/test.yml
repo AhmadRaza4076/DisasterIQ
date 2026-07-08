@@ -1,0 +1,18 @@
+name: backend-tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt pyyaml
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          DEMO_DATA_DIR: ${{ github.workspace }}/data/demo
+          INFERENCE_MODE: stub
+        run: pytest tests/ -v

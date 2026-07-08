@@ -1,5 +1,7 @@
 # Satellite Disaster-Damage Triage
 
+[![tests](https://github.com/AhmadRaza4076/DisasterIQ/actions/workflows/test.yml/badge.svg)](https://github.com/AhmadRaza4076/DisasterIQ/actions/workflows/test.yml)
+
 Team **DarkNem** — AMD Developer Hackathon ACT II (Track 3: Unicorn)
 
 Automated building damage assessment from pre/post disaster satellite imagery. Deterministic ML scoring is the source of truth; Fireworks LLM narrates ranked zone reports only.
