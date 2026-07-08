@@ -15,4 +15,4 @@ jobs:
         env:
           DEMO_DATA_DIR: ${{ github.workspace }}/data/demo
           INFERENCE_MODE: stub
-        run: pytest tests/ -v
+        run: python -m pytest tests/ -v
