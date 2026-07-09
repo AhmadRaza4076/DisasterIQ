@@ -1,6 +1,7 @@
 """Patch michal2409/xView2 for DisasterIQ subset training (idempotent).
 
 - pytorch_loader.py: read index.csv from XVIEW2_INDEX_CSV or repo-relative utils/index.csv
+- model/plt.py: optional NVIDIA Apex optimizers → torch.optim fallback (Kaggle/CPU)
 
 Index generation uses scripts/generate_subset_index.py (not upstream generate_idx.py).
 
@@ -29,6 +30,15 @@ def _load_index_csv():
 '''
 LOADER_REPLACE = "        data_frame = _load_index_csv()"
 
+PLT = XVIEW2_ROOT / "model" / "plt.py"
+APEX_IMPORT = "from apex.optimizers import FusedAdam, FusedNovoGrad, FusedSGD"
+APEX_FALLBACK = """try:
+    from apex.optimizers import FusedAdam, FusedNovoGrad, FusedSGD
+except ImportError:
+    FusedAdam = torch.optim.Adam
+    FusedSGD = torch.optim.SGD
+    FusedNovoGrad = torch.optim.Adam"""
+
 
 def patch_loader() -> None:
     if not LOADER.exists():
@@ -53,8 +63,22 @@ def patch_loader() -> None:
     print(f"Patched {LOADER}")
 
 
+def patch_plt() -> None:
+    if not PLT.exists():
+        raise SystemExit(f"Missing {PLT} — clone michal2409/xView2 into ml/pytorch-xview2")
+    text = PLT.read_text(encoding="utf-8")
+    if "FusedAdam = torch.optim.Adam" in text:
+        print(f"Already patched: {PLT}")
+        return
+    if APEX_IMPORT not in text:
+        raise SystemExit(f"Expected apex import in {PLT} — upstream layout may have changed")
+    PLT.write_text(text.replace(APEX_IMPORT, APEX_FALLBACK), encoding="utf-8")
+    print(f"Patched {PLT} (apex → torch.optim fallback)")
+
+
 def main() -> None:
     patch_loader()
+    patch_plt()
     # generate_idx.py is intentionally left unpatched/unused — superseded by
     # scripts/generate_subset_index.py, which generates index.csv scoped to
     # our actual train_subset instead of the full original xView2 dataset.

@@ -92,9 +92,13 @@ INDEX_OUT="$REPO_ROOT/ml/pytorch-xview2/utils/index.csv"
 export XVIEW2_INDEX_CSV="$INDEX_OUT"
 
 echo "=== Generate index.csv for $DATA_DIR ==="
-python3 "$REPO_ROOT/scripts/generate_subset_index.py" \
-  --data-dir "$DATA_DIR" \
-  --out "$INDEX_OUT"
+if [[ -f "$INDEX_OUT" ]] && [[ "$(wc -l < "$INDEX_OUT")" -gt 1 ]]; then
+  echo "index.csv already exists ($(wc -l < "$INDEX_OUT") lines) — skipping regeneration"
+else
+  python3 "$REPO_ROOT/scripts/generate_subset_index.py" \
+    --data-dir "$DATA_DIR" \
+    --out "$INDEX_OUT"
+fi
 
 echo "=== CPU dataset smoke test ==="
 python3 "$REPO_ROOT/scripts/test_pytorch_dataset.py" --data-dir "$DATA_DIR"

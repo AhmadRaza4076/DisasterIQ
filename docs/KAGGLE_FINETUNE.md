@@ -111,7 +111,7 @@ To train longer on Kaggle, edit `config_subset_kaggle.yaml` epochs before runnin
 | `Could not find train_subset` | Check dataset slug; ensure zip has `images/` at root |
 | OOM during damage stage | Lower `damage.batch_size` to 2 in `config_subset_kaggle.yaml` |
 | `Missing ml/pytorch-xview2` | Re-run clone cell; repo is gitignored locally but cloned on Kaggle |
-| Weekly GPU quota exhausted | Wait for reset (~Sunday UTC) or use Colab/RunPod |
+| `No module named 'apex'` | Re-run `python ml/finetune/patch_pytorch_xview2.py` (patches `plt.py`), then `bash ml/finetune/run_kaggle_pipeline.sh --train-only` — skips index regen if `index.csv` exists |
 
 ## Honest judge narrative
 
