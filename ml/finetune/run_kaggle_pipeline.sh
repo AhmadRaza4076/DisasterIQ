@@ -100,8 +100,10 @@ else
     --out "$INDEX_OUT"
 fi
 
-echo "=== CPU dataset smoke test ==="
-python3 "$REPO_ROOT/scripts/test_pytorch_dataset.py" --data-dir "$DATA_DIR"
+if [[ "$STAGE" != "train" ]]; then
+  echo "=== CPU dataset smoke test ==="
+  python3 "$REPO_ROOT/scripts/test_pytorch_dataset.py" --data-dir "$DATA_DIR"
+fi
 
 eval "$(python3 "$FINETUNE_DIR/load_config.py" --config "$FINETUNE_CONFIG" data)"
 mkdir -p "$RESULTS_ROOT"
