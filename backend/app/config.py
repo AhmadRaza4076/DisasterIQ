@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     pytorch_inference_dir: Path = _REPO_ROOT / "ml" / "pytorch-inference"
     upload_dir: Path = Path(__file__).resolve().parents[1] / "uploads"
     output_dir: Path = Path(__file__).resolve().parents[1] / "outputs"
-    grid_rows: int = 4
-    grid_cols: int = 4
+    grid_rows: int = Field(default=4, gt=0)
+    grid_cols: int = Field(default=4, gt=0)
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     @model_validator(mode="after")

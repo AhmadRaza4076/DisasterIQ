@@ -99,3 +99,26 @@ def test_score_mask_populates_zone_confidence_from_npy() -> None:
 
     assert len(result.zones) == 1
     assert result.zones[0].confidence == pytest.approx(0.8)
+
+
+def test_score_mask_mask_path_is_basename_only() -> None:
+    mask = np.zeros((8, 8), dtype=np.uint8)
+    mask[0:4, 0:4] = 2
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "nested" / "job_mask.png"
+        path.parent.mkdir(parents=True)
+        Image.fromarray(mask, mode="L").save(path)
+        result = score_mask(path, grid_rows=2, grid_cols=2)
+
+    assert result.mask_path == "job_mask.png"
+    assert "/" not in (result.mask_path or "")
+    assert "\\" not in (result.mask_path or "")
+
+
+def test_building_counts_diagonal_pixels_one_component_with_8_connectivity() -> None:
+    mask = np.zeros((5, 5), dtype=np.uint8)
+    mask[1, 1] = 4
+    mask[2, 2] = 4
+    counts = building_counts_for_region(mask)
+    assert counts.destroyed == 1

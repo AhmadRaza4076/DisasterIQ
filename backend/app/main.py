@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.config import settings
 from app.schemas import AnalysisResult, BriefRequest, BriefResponse, DemoPair, ReportRequest
+from app.services.cleanup import cleanup_old_jobs
 from app.services.georef import enrich_zones_with_geo
 from app.services.inference import list_demo_pairs, run_inference
 from app.services.narrator import generate_brief
@@ -128,6 +129,7 @@ async def analyze(
     post_image: UploadFile | None = File(None),
     demo_pair_id: str | None = Form(None),
 ) -> AnalysisResult:
+    cleanup_old_jobs(settings.upload_dir, settings.output_dir)
     job_id = uuid.uuid4().hex
     job_dir = settings.upload_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)

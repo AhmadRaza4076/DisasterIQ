@@ -17,6 +17,8 @@ CPU data prep is complete: `data/train/` (5598 masks) and `data/train_subset/` (
 | Mode | Behavior | When to use |
 |------|----------|-------------|
 | `stub` | GT copy for demo pairs, else pixel-diff heuristic | Fast rehearsed demo |
+
+**`stub-heuristic` limitation:** The pixel-diff fallback only labels *changed* regions as minor, major, or destroyed (classes 2–4). It cannot produce undamaged building pixels (class 1) — that requires ground-truth targets (`stub-groundtruth` on demo pairs) or a real model (`docker` / `pytorch`).
 | `docker` | Official xView2 TF 1.15 baseline | Credibility / IoU baseline |
 | `pytorch` | Fine-tuned checkpoint via `ml/pytorch-inference/` | After AMD GPU training |
 

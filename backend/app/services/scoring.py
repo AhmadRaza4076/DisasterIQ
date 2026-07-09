@@ -68,11 +68,14 @@ def counts_for_region(mask: np.ndarray) -> DamageCounts:
     )
 
 
+_CONNECTIVITY = np.ones((3, 3), dtype=int)
+
+
 def building_counts_for_region(mask: np.ndarray) -> BuildingCounts:
     """Count distinct connected components (buildings) per damage class."""
     counts = BuildingCounts()
     for cls, field in _CLASS_TO_FIELD.items():
-        _, num = label(mask == cls)
+        _, num = label(mask == cls, structure=_CONNECTIVITY)
         setattr(counts, field, int(num))
     return counts
 
@@ -85,7 +88,7 @@ def confidence_for_region(confidence: np.ndarray, mask_region: np.ndarray) -> fl
     return round(float(confidence[building].mean()), 4)
 
 
-def priority_score(counts: BuildingCounts | DamageCounts) -> float:
+def priority_score(counts: BuildingCounts) -> float:
     total_building = counts.none + counts.minor + counts.major + counts.destroyed
     if total_building == 0:
         return 0.0
@@ -177,7 +180,7 @@ def score_mask(
     return AnalysisResult(
         zones=zones,
         summary=summary,
-        mask_path=str(mask_path),
+        mask_path=mask_path.name,
         mask_base64=mask_b64,
         inference_mode="scoring",
     )

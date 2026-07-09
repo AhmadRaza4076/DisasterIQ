@@ -24,6 +24,7 @@ backend/smoke_brief.json
 backend/app/uploads/
 *.tar
 *.tar.gz
+disasteriq-train-subset.zip
 backend/.venv/
 ml/xview2-baseline/
 ml/pytorch-xview2/

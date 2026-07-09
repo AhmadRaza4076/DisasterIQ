@@ -6,14 +6,14 @@
 #   bash ml/finetune/run_kaggle_pipeline.sh --stage dmg   # damage only (needs loc ckpt)
 set -euo pipefail
 
-STAGE="${1:-all}"
-if [[ "$1" == "--stage" ]]; then
+STAGE="all"
+if [[ "${1:-}" == "--stage" ]]; then
   STAGE="${2:-all}"
   shift 2 || true
-elif [[ "$1" == "--prep-only" ]]; then
+elif [[ "${1:-}" == "--prep-only" ]]; then
   STAGE="prep"
   shift
-elif [[ "$1" == "--train-only" ]]; then
+elif [[ "${1:-}" == "--train-only" ]]; then
   STAGE="train"
   shift
 fi

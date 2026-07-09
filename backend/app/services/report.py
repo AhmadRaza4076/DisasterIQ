@@ -134,6 +134,14 @@ def build_field_report_pdf(
             )
         )
         story.append(table)
+        if len(zones) > 12:
+            story.append(Spacer(1, 0.08 * inch))
+            story.append(
+                Paragraph(
+                    f"<i>Showing top 12 of {len(zones)} ranked zones.</i>",
+                    styles["body"],
+                )
+            )
     else:
         story.append(Paragraph("No damage zones detected.", styles["body"]))
 
