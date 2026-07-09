@@ -36,7 +36,7 @@ This creates `D:\AMD\disasteriq-train-subset.zip` with `images/`, `labels/`, `ta
 2. **File → Import Notebook** → upload `notebooks/kaggle_finetune.ipynb` from this repo  
    **Or** copy the notebook from GitHub after you push.
 3. **Input** (right sidebar) → **Add Input** → add dataset `disasteriq-train-subset`
-4. **Settings** → **Accelerator** → **GPU** (T4 or P100)
+4. **Settings** → **Accelerator** → **GPU T4 x2** (recommended). P100 works only after cell 2 installs cu118 PyTorch (default Kaggle torch does not support P100 sm_60).
 5. Verify phone is verified (required for GPU)
 
 ## 3. Run the notebook
@@ -107,6 +107,7 @@ To train longer on Kaggle, edit `config_subset_kaggle.yaml` epochs before runnin
 |---------|-----|
 | GPU option greyed out | Verify phone in Kaggle account settings |
 | `CUDA: False` | Settings → GPU → save; restart notebook |
+| P100 `sm_60 not compatible` warnings | Use **GPU T4 x2**, or re-run cell 2 (`cu118` torch) then restart session |
 | `Could not find train_subset` | Check dataset slug; ensure zip has `images/` at root |
 | OOM during damage stage | Lower `damage.batch_size` to 2 in `config_subset_kaggle.yaml` |
 | `Missing ml/pytorch-xview2` | Re-run clone cell; repo is gitignored locally but cloned on Kaggle |

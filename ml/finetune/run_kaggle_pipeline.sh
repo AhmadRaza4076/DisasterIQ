@@ -39,14 +39,23 @@ find_train_subset() {
     "$INPUT_ROOT/disasteriq-train-subset" \
     "$INPUT_ROOT"/disasteriq-train-subset/train_subset \
     "$INPUT_ROOT"/*/train_subset \
+    "$INPUT_ROOT"/*/*/*/train_subset \
     "$INPUT_ROOT"/*/
   do
-    [[ -d "$candidate/images" ]] || continue
+    [[ -d "$candidate/images" && -d "$candidate/targets" ]] || continue
     echo "$candidate"
     return 0
   done
-  echo "ERROR: Could not find train_subset (expected .../images under $INPUT_ROOT or $WORKING/data)" >&2
-  exit 1
+  # Fallback: walk /kaggle/input for any train_subset layout
+  python3 - <<'PY'
+from pathlib import Path
+root = Path("/kaggle/input")
+for images in root.rglob("images"):
+    parent = images.parent
+    if (parent / "targets").is_dir():
+        print(parent)
+        break
+PY
 }
 
 echo "=== CUDA GPU check ==="
@@ -63,6 +72,10 @@ if [[ ! -d "$REPO_ROOT/ml/pytorch-xview2" ]]; then
 fi
 
 SRC_SUBSET="$(find_train_subset)"
+if [[ -z "$SRC_SUBSET" || ! -d "$SRC_SUBSET/images" ]]; then
+  echo "ERROR: Could not find train_subset under $INPUT_ROOT" >&2
+  exit 1
+fi
 DEST_SUBSET="$WORKING/data/train_subset"
 if [[ "$SRC_SUBSET" != "$DEST_SUBSET" ]]; then
   echo "=== Staging train_subset: $SRC_SUBSET -> $DEST_SUBSET ==="
