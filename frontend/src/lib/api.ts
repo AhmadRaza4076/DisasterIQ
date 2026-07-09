@@ -20,6 +20,7 @@ export interface Zone {
   priority_score: number;
   centroid_lat?: number | null;
   centroid_lng?: number | null;
+  confidence?: number | null;
 }
 
 export interface AnalysisSummary {

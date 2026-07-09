@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 node_modules/
 .next/
+*.tsbuildinfo
 data/test/
 data/train/
 data/train_subset/

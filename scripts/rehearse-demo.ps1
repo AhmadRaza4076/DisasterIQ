@@ -18,7 +18,8 @@ try {
 Write-Host "Backend OK - inference_mode=$($health.inference_mode), pairs=$($health.demo_pairs)"
 
 $pairs = Invoke-RestMethod -Uri "http://localhost:8000/demo/pairs"
-$pairId = $pairs[0].id
+$preferred = "mexico-earthquake_00000076"
+$pairId = if ($pairs.id -contains $preferred) { $preferred } else { $pairs[0].id }
 Write-Host "Analyzing demo pair: $pairId"
 
 $analysisJson = curl.exe -s -X POST "http://localhost:8000/analyze" -F "demo_pair_id=$pairId"
