@@ -26,6 +26,7 @@ SECTION_KEYS = {
         "BATCH_SIZE": "batch_size",
         "ENCODER": "encoder",
         "RESULTS_DIR": "results_dir",
+        "NUM_WORKERS": "num_workers",
     },
     "damage": {
         "EPOCHS": "epochs",
@@ -33,6 +34,7 @@ SECTION_KEYS = {
         "ENCODER": "encoder",
         "RESULTS_DIR": "results_dir",
         "CKPT_PRE": "ckpt_pre",
+        "NUM_WORKERS": "num_workers",
     },
 }
 
@@ -70,6 +72,9 @@ def main() -> None:
     for env_key, yaml_key in SECTION_KEYS[args.section].items():
         val = section.get(yaml_key)
         if val is not None:
+            # Respect caller overrides (e.g. CKPT_PRE=last.ckpt on Kaggle)
+            if env_key in os.environ and os.environ[env_key]:
+                continue
             print(f'export {env_key}="{val}"')
 
 

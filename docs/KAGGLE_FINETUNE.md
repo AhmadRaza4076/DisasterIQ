@@ -43,27 +43,41 @@ This creates `D:\AMD\disasteriq-train-subset.zip` with `images/`, `labels/`, `ta
 
 Recommended order:
 
-1. Run cells 1–5 on **CPU** first (install, clone, stage data, patch, index) — saves GPU quota
+1. Run cells 1–4 on **CPU** first (install, clone, prep/index) — saves GPU quota
 2. Enable **GPU** in Settings if not already
-3. Run cell 6 (GPU check) — must print `CUDA: True`
-4. Run cell 7 — full training (`run_kaggle_pipeline.sh`)
-5. Run cell 8 — confirms `damage_best.ckpt` in Output
+3. Run cell 5 (GPU check) — must print `CUDA: True`
+4. Run cell 6 — full training via `kaggle_train.py --stage all`
+5. Run cell 7 — confirms `damage_best.ckpt` in Output
 
 **Session limits:** ~9–12 hours per run, ~30 GPU hours/week. Checkpoints are copied to `/kaggle/working/damage_best.ckpt` during training.
 
 ### Resume after disconnect
 
-If localization finished but damage did not:
+If **localization finished** but **damage failed** (most common after long runs):
 
 ```bash
 cd /kaggle/working/DisasterIQ
-bash ml/finetune/run_kaggle_pipeline.sh --stage dmg
+python ml/finetune/kaggle_train.py --stage dmg --skip-deps
 ```
+
+Or in notebook cell 6:
+
+```python
+!python ml/finetune/kaggle_train.py --stage dmg --skip-deps
+```
+
+This applies all xView2 patches (including MONAI loss fix), resolves `last.ckpt` if `best.ckpt` is missing, and exports `damage_best.ckpt`.
 
 If you need to re-run only localization:
 
 ```bash
-bash ml/finetune/run_kaggle_pipeline.sh --stage loc
+python ml/finetune/kaggle_train.py --stage loc --skip-deps
+```
+
+Legacy shell pipeline (still supported):
+
+```bash
+bash ml/finetune/run_kaggle_pipeline.sh --stage dmg
 ```
 
 ## 4. Download checkpoint
@@ -95,8 +109,11 @@ PYTORCH_CHECKPOINT_PATH=ml/checkpoints/damage_best.ckpt
 
 | File | Purpose |
 |------|---------|
-| `ml/finetune/config_subset_kaggle.yaml` | 5 loc + 8 damage epochs, Kaggle paths |
-| `ml/finetune/run_kaggle_pipeline.sh` | Full pipeline (auto-finds dataset, exports ckpt) |
+| `ml/finetune/config_subset_kaggle.yaml` | 5 loc + 8 damage epochs, Kaggle paths, `num_workers: 4` |
+| `ml/finetune/kaggle_train.py` | Unified bootstrap + staged training (recommended) |
+| `ml/finetune/requirements_kaggle.txt` | Pinned deps for xView2 on modern Kaggle |
+| `ml/finetune/patch_pytorch_xview2.py` | All xView2 compatibility patches (idempotent) |
+| `ml/finetune/run_kaggle_pipeline.sh` | Legacy full pipeline (auto-finds dataset, exports ckpt) |
 | `ml/finetune/config_subset.yaml` | Full AMD run (10+20 epochs) |
 
 To train longer on Kaggle, edit `config_subset_kaggle.yaml` epochs before running (watch session time).
@@ -110,8 +127,17 @@ To train longer on Kaggle, edit `config_subset_kaggle.yaml` epochs before runnin
 | P100 `sm_60 not compatible` warnings | Use **GPU T4 x2**, or re-run cell 2 (`cu118` torch) then restart session |
 | `Could not find train_subset` | Check dataset slug; ensure zip has `images/` at root |
 | OOM during damage stage | Lower `damage.batch_size` to 2 in `config_subset_kaggle.yaml` |
-| `Missing ml/pytorch-xview2` | Re-run clone cell; repo is gitignored locally but cloned on Kaggle |
-| `No module named 'apex'` | Re-run `python ml/finetune/patch_pytorch_xview2.py` (patches `plt.py`), then `bash ml/finetune/run_kaggle_pipeline.sh --train-only` — skips index regen if `index.csv` exists |
+| `Missing ml/pytorch-xview2` | Re-run clone cell (cell 3) |
+| `No module named 'apex'` | Run `python ml/finetune/patch_pytorch_xview2.py` |
+| `No module named 'dllogger'` or wrong dllogger | `pip install git+https://github.com/NVIDIA/dllogger.git#egg=dllogger` |
+| `pytorch_lightning.metrics` not found | Pin PL 1.9.5: `pip install pytorch-lightning==1.9.5 torchmetrics` |
+| PL 2.x / `validation_epoch_end` errors | Same — must use **pytorch-lightning==1.9.5** |
+| `AssertionError` in `load_data` (0 images) | Run patches + data layout: `kaggle_train.py --stage prep` or symlinks under `train_subset/train/` |
+| `FileNotFoundError` for `logs.json` | Results dirs created automatically by `kaggle_train.py` |
+| `Missing localization checkpoint: best.ckpt` | Use `kaggle_train.py --stage dmg` — auto-resolves `last.ckpt` |
+| `ground truth has different shape` (64447×1 vs 64447×4) | Run `patch_pytorch_xview2.py` (includes MONAI loss patch) |
+| `torch.load` / `weights_only` error | Same patch script patches `main.py` |
+| DataLoader worker warning | `num_workers: 4` in config (default) |
 
 ## Honest judge narrative
 

@@ -85,7 +85,7 @@ See [docs/KAGGLE_FINETUNE.md](../../docs/KAGGLE_FINETUNE.md) and `notebooks/kagg
 # Upload zip to Kaggle → run notebook with GPU enabled
 ```
 
-Config: `ml/finetune/config_subset_kaggle.yaml` (5+8 epochs). Pipeline: `ml/finetune/run_kaggle_pipeline.sh`.
+Config: `ml/finetune/config_subset_kaggle.yaml` (5+8 epochs). Entrypoint: `python ml/finetune/kaggle_train.py --stage all` (or legacy `run_kaggle_pipeline.sh`).
 
 ## Integrating checkpoint
 

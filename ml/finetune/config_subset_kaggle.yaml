@@ -19,6 +19,7 @@ localization:
   epochs: 5
   batch_size: 8
   val_batch_size: 8
+  num_workers: 4
   gpus: 1
   results_dir: /kaggle/working/results/loc
 
@@ -30,6 +31,7 @@ damage:
   epochs: 8
   batch_size: 4
   val_batch_size: 4
+  num_workers: 4
   gpus: 1
   results_dir: /kaggle/working/results/dmg
   ckpt_pre: /kaggle/working/results/loc/checkpoints/best.ckpt

@@ -85,6 +85,22 @@ if [[ "$SRC_SUBSET" != "$DEST_SUBSET" ]]; then
 fi
 export DATA_DIR="$DEST_SUBSET"
 
+ensure_xview2_layout() {
+  local root="$1"
+  [[ -d "$root/images" ]] || return 0
+  [[ -d "$root/train/images" ]] && return 0
+  for split in train test; do
+    mkdir -p "$root/$split"
+    for sub in images targets labels; do
+      [[ -d "$root/$sub" ]] || continue
+      [[ -e "$root/$split/$sub" ]] && continue
+      ln -sfn "$(readlink -f "$root/$sub")" "$root/$split/$sub"
+    done
+  done
+  echo "Created xView2 train/test symlinks under $root"
+}
+ensure_xview2_layout "$DEST_SUBSET"
+
 echo "=== Patch upstream xView2 for subset training ==="
 python3 "$FINETUNE_DIR/patch_pytorch_xview2.py"
 
@@ -122,19 +138,54 @@ fi
 
 if [[ "$STAGE" == "all" || "$STAGE" == "train" || "$STAGE" == "dmg" ]]; then
   echo "=== Stage 2: damage fine-tune ==="
+  resolve_ckpt() {
+    local ckpt="$1"
+    local dir
+    dir="$(dirname "$ckpt")"
+    if [[ -f "$ckpt" ]]; then
+      echo "$ckpt"
+      return 0
+    fi
+    if [[ -f "$dir/last.ckpt" ]]; then
+      echo "$dir/last.ckpt"
+      return 0
+    fi
+    local latest
+    latest="$(ls -t "$dir"/*.ckpt 2>/dev/null | head -1 || true)"
+    if [[ -n "$latest" ]]; then
+      echo "$latest"
+      return 0
+    fi
+    return 1
+  }
+  LOC_CKPT="$RESULTS_ROOT/loc/checkpoints/best.ckpt"
+  if ! LOC_CKPT="$(resolve_ckpt "$LOC_CKPT")"; then
+    echo "ERROR: Missing localization checkpoint under $RESULTS_ROOT/loc/checkpoints" >&2
+    exit 1
+  fi
+  echo "Using localization checkpoint: $LOC_CKPT"
   DATA_DIR="$DATA_DIR" RESULTS_DIR="$RESULTS_ROOT/dmg" \
-    CKPT_PRE="$RESULTS_ROOT/loc/checkpoints/best.ckpt" \
+    CKPT_PRE="$LOC_CKPT" \
     FINETUNE_CONFIG="$FINETUNE_CONFIG" \
     bash "$FINETUNE_DIR/train_damage.sh"
 fi
 
-CKPT_DMG="$RESULTS_ROOT/dmg/checkpoints/best.ckpt"
-if [[ -f "$CKPT_DMG" ]]; then
-  cp -f "$CKPT_DMG" "$WORKING/damage_best.ckpt"
-  echo "Exported checkpoint -> $WORKING/damage_best.ckpt"
-  ls -la "$WORKING/damage_best.ckpt"
-else
-  echo "WARN: No damage checkpoint at $CKPT_DMG"
+export_damage_ckpt() {
+  local dmg_dir="$RESULTS_ROOT/dmg/checkpoints"
+  local out="$WORKING/damage_best.ckpt"
+  for candidate in "$dmg_dir/best.ckpt" "$dmg_dir/last.ckpt" "$dmg_dir"/*.ckpt; do
+    [[ -f "$candidate" ]] || continue
+    cp -f "$candidate" "$out"
+    echo "Exported checkpoint -> $out (from $(basename "$candidate"))"
+    ls -la "$out"
+    return 0
+  done
+  echo "WARN: No damage checkpoint under $dmg_dir"
+  return 1
+}
+
+if [[ "$STAGE" == "all" || "$STAGE" == "train" || "$STAGE" == "dmg" ]]; then
+  export_damage_ckpt || true
 fi
 
 echo "Done."
