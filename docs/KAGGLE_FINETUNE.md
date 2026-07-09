@@ -57,16 +57,22 @@ If **localization finished** but **damage failed** (most common after long runs)
 
 ```bash
 cd /kaggle/working/DisasterIQ
-python ml/finetune/kaggle_train.py --stage dmg --skip-deps
+python ml/finetune/kaggle_train.py --stage dmg --skip-deps --skip-smoke-test
 ```
 
-Or in notebook cell 6:
+**Do not use `git pull` on Kaggle** — prior runs edit scripts locally and pull will abort. Instead fetch latest scripts:
 
 ```python
-!python ml/finetune/kaggle_train.py --stage dmg --skip-deps
+import urllib.request
+from pathlib import Path
+RAW = "https://raw.githubusercontent.com/AhmadRaza4076/DisasterIQ/main/ml/finetune"
+fin = Path("/kaggle/working/DisasterIQ/ml/finetune")
+for name in ["kaggle_train.py", "patch_pytorch_xview2.py", "load_config.py", "config_subset_kaggle.yaml"]:
+    (fin / name).write_bytes(urllib.request.urlopen(f"{RAW}/{name}", timeout=60).read())
+!python ml/finetune/kaggle_train.py --stage dmg --skip-deps --skip-smoke-test
 ```
 
-This applies all xView2 patches (including MONAI loss fix), resolves `last.ckpt` if `best.ckpt` is missing, and exports `damage_best.ckpt`.
+Or run **notebook cell 6b** (same commands). Training invokes `main.py` directly so Python tracebacks appear in the notebook output (not hidden behind `train_damage.sh`).
 
 If you need to re-run only localization:
 
@@ -135,8 +141,9 @@ To train longer on Kaggle, edit `config_subset_kaggle.yaml` epochs before runnin
 | `AssertionError` in `load_data` (0 images) | Run patches + data layout: `kaggle_train.py --stage prep` or symlinks under `train_subset/train/` |
 | `FileNotFoundError` for `logs.json` | Results dirs created automatically by `kaggle_train.py` |
 | `Missing localization checkpoint: best.ckpt` | Use `kaggle_train.py --stage dmg` — auto-resolves `last.ckpt` |
-| `ground truth has different shape` (64447×1 vs 64447×4) | Run `patch_pytorch_xview2.py` (includes MONAI loss patch) |
-| `torch.load` / `weights_only` error | Same patch script patches `main.py` |
+| `ground truth has different shape` (64447×1 vs 64447×4) | Fetch `overrides/model/loss.py` + re-run patches (uses pure PyTorch for damage loss) |
+| `subprocess.CalledProcessError` on damage with no traceback | Use `kaggle_train.py` (not inline `main.py`); smoke test runs first and prints real errors |
+| `torch.load` / `weights_only` error | Fetch `overrides/main.py` + re-run patches |
 | DataLoader worker warning | `num_workers: 4` in config (default) |
 
 ## Honest judge narrative

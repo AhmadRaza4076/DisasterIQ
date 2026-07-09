@@ -11,7 +11,6 @@ Usage (from repo root on Kaggle):
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import os
 import shutil
 import subprocess
@@ -156,18 +155,64 @@ def export_damage_checkpoint(results_root: Path, export_path: Path) -> None:
     print(f"WARN: no .ckpt files in {dmg_dir}")
 
 
-def run_shell(script: str, **env: str) -> None:
+def run_cmd(cmd: list[str], *, cwd: Path, env: dict | None = None) -> None:
     merged = os.environ.copy()
-    merged.update({k: str(v) for k, v in env.items()})
-    subprocess.run(["bash", script], check=True, cwd=str(REPO_ROOT), env=merged)
+    merged["PYTHONUNBUFFERED"] = "1"
+    if env:
+        merged.update(env)
+    if cmd and cmd[0] == sys.executable and "-u" not in cmd:
+        cmd = [sys.executable, "-u", *cmd[1:]]
+    print("Running:", " ".join(cmd))
+    result = subprocess.run(cmd, cwd=str(cwd), env=merged)
+    if result.returncode != 0:
+        raise SystemExit(result.returncode)
 
 
-def prep_stage(data_dir: Path, config_path: Path) -> None:
+def load_yaml_section(config_path: Path, section: str) -> dict:
+    import yaml
+
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    return cfg.get(section, {})
+
+
+def verify_patches() -> None:
+    loss_path = XVIEW2_ROOT / "model" / "loss.py"
+    main_path = XVIEW2_ROOT / "main.py"
+    if not loss_path.is_file():
+        raise FileNotFoundError(f"Missing {loss_path}")
+    loss_text = loss_path.read_text(encoding="utf-8")
+    if "_flat_focal" not in loss_text and "_to_monai_spatial" not in loss_text:
+        raise RuntimeError(
+            "model/loss.py is not patched for damage training — re-run patch_pytorch_xview2.py"
+        )
+    if main_path.is_file():
+        main_text = main_path.read_text(encoding="utf-8")
+        if "weights_only=False" not in main_text:
+            raise RuntimeError("main.py missing torch.load patch — re-run patch_pytorch_xview2.py")
+        if "checkpoint_callback=" in main_text:
+            raise RuntimeError("main.py still uses PL 1.0 checkpoint_callback — re-run patches")
+    print("xView2 patches verified")
+
+
+def smoke_damage(data_dir: Path, results_root: Path, config_path: Path) -> None:
+    """One training batch — catches loss/OOM errors before multi-hour run."""
+    _ = data_dir, config_path
+    loc_ckpt = resolve_checkpoint(results_root / "loc" / "checkpoints" / "best.ckpt")
+    print(f"Smoke test with loc checkpoint: {loc_ckpt}")
+    run_cmd(
+        [sys.executable, str(FINETUNE_DIR / "smoke_damage_step.py")],
+        cwd=REPO_ROOT,
+        env={"XVIEW2_INDEX_CSV": str(INDEX_CSV), "KAGGLE_WORKING": str(WORKING)},
+    )
+
+
+def prep_stage(data_dir: Path, config_path: Path, *, skip_smoke_test: bool = False) -> None:
     if not XVIEW2_ROOT.is_dir():
         raise FileNotFoundError(f"Missing {XVIEW2_ROOT} — clone xView2 first")
 
     ensure_data_layout(data_dir)
     run_patches()
+    verify_patches()
 
     os.environ["XVIEW2_INDEX_CSV"] = str(INDEX_CSV)
     if INDEX_CSV.is_file() and INDEX_CSV.stat().st_size > 10:
@@ -186,6 +231,10 @@ def prep_stage(data_dir: Path, config_path: Path) -> None:
             cwd=str(REPO_ROOT),
         )
 
+    if skip_smoke_test:
+        print("Skipping dataset smoke test")
+        return
+
     subprocess.run(
         [
             sys.executable,
@@ -200,12 +249,37 @@ def prep_stage(data_dir: Path, config_path: Path) -> None:
 
 def train_loc(data_dir: Path, results_root: Path, config_path: Path) -> None:
     ensure_results_dirs(results_root)
-    run_shell(
-        str(FINETUNE_DIR / "train_localization.sh"),
-        FINETUNE_CONFIG=str(config_path),
-        DATA_DIR=str(data_dir),
-        RESULTS_DIR=str(results_root / "loc"),
-        XVIEW2_INDEX_CSV=str(INDEX_CSV),
+    loc_cfg = load_yaml_section(config_path, "localization")
+    run_cmd(
+        [
+            sys.executable,
+            "main.py",
+            "--exec_mode",
+            "train",
+            "--type",
+            "pre",
+            "--data",
+            str(data_dir),
+            "--results",
+            str(results_root / "loc"),
+            "--encoder",
+            str(loc_cfg.get("encoder", "resnet50")),
+            "--loss_str",
+            str(loc_cfg.get("loss_str", "ce+dice")),
+            "--deep_supervision",
+            "--gpus",
+            "1",
+            "--num_workers",
+            str(loc_cfg.get("num_workers", 4)),
+            "--batch_size",
+            str(loc_cfg.get("batch_size", 8)),
+            "--val_batch_size",
+            str(loc_cfg.get("val_batch_size", loc_cfg.get("batch_size", 8))),
+            "--epochs",
+            str(loc_cfg.get("epochs", 5)),
+        ],
+        cwd=XVIEW2_ROOT,
+        env={"XVIEW2_INDEX_CSV": str(INDEX_CSV)},
     )
 
 
@@ -221,13 +295,60 @@ def train_dmg(
     resolved = resolve_checkpoint(preferred)
     print(f"Using localization checkpoint: {resolved}")
 
-    run_shell(
-        str(FINETUNE_DIR / "train_damage.sh"),
-        FINETUNE_CONFIG=str(config_path),
-        DATA_DIR=str(data_dir),
-        RESULTS_DIR=str(results_root / "dmg"),
-        CKPT_PRE=str(resolved),
-        XVIEW2_INDEX_CSV=str(INDEX_CSV),
+    # Fail fast with a clear error if torch.load patch is missing (PyTorch 2.x)
+    import torch
+
+    try:
+        torch.load(str(resolved), map_location="cpu", weights_only=False)
+        print("Localization checkpoint loads OK")
+    except TypeError:
+        raise RuntimeError(
+            "PyTorch 2.x needs weights_only=False on torch.load — "
+            "re-run patch_pytorch_xview2.py (patch_torch_load)"
+        ) from None
+    except Exception as exc:
+        raise RuntimeError(f"Cannot load localization checkpoint {resolved}: {exc}") from exc
+
+    dmg_cfg = load_yaml_section(config_path, "damage")
+    dmg_results = results_root / "dmg"
+    smoke_damage(data_dir, results_root, config_path)
+    run_cmd(
+        [
+            sys.executable,
+            "main.py",
+            "--exec_mode",
+            "train",
+            "--type",
+            "post",
+            "--dmg_model",
+            "siamese",
+            "--data",
+            str(data_dir),
+            "--results",
+            str(dmg_results),
+            "--encoder",
+            str(dmg_cfg.get("encoder", "resnet50")),
+            "--loss_str",
+            str(dmg_cfg.get("loss_str", "focal+dice")),
+            "--ckpt_pre",
+            str(resolved),
+            "--attention",
+            "--deep_supervision",
+            "--gpus",
+            "1",
+            "--precision",
+            str(dmg_cfg.get("precision", 32)),
+            "--num_workers",
+            str(dmg_cfg.get("num_workers", 4)),
+            "--batch_size",
+            str(dmg_cfg.get("batch_size", 4)),
+            "--val_batch_size",
+            str(dmg_cfg.get("val_batch_size", dmg_cfg.get("batch_size", 4))),
+            "--epochs",
+            str(dmg_cfg.get("epochs", 8)),
+        ],
+        cwd=XVIEW2_ROOT,
+        env={"XVIEW2_INDEX_CSV": str(INDEX_CSV)},
     )
 
 
@@ -254,6 +375,11 @@ def main() -> None:
     parser.add_argument("--results-root", type=Path, default=WORKING / "results")
     parser.add_argument("--export", type=Path, default=WORKING / "damage_best.ckpt")
     parser.add_argument("--skip-deps", action="store_true", help="Skip pip install checks")
+    parser.add_argument(
+        "--skip-smoke-test",
+        action="store_true",
+        help="Skip test_pytorch_dataset.py after prep (faster dmg resume)",
+    )
     args = parser.parse_args()
 
     os.chdir(REPO_ROOT)
@@ -264,7 +390,11 @@ def main() -> None:
     ensure_pytorch_lightning_19()
 
     if args.stage in ("prep", "all", "loc", "dmg"):
-        prep_stage(args.data_dir, args.config)
+        prep_stage(
+            args.data_dir,
+            args.config,
+            skip_smoke_test=args.skip_smoke_test or args.stage == "dmg",
+        )
 
     if args.stage == "prep":
         print("Prep complete.")

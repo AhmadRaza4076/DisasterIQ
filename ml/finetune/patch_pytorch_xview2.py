@@ -25,7 +25,9 @@ import py_compile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+FINETUNE_DIR = REPO_ROOT / "ml" / "finetune"
 XVIEW2_ROOT = REPO_ROOT / "ml" / "pytorch-xview2"
+OVERRIDES = FINETUNE_DIR / "overrides"
 
 LOADER = XVIEW2_ROOT / "data_loading" / "pytorch_loader.py"
 
@@ -64,6 +66,22 @@ def _resolve_data_path(data_root, split):
 
 def _indent_of(line: str) -> str:
     return line[: len(line) - len(line.lstrip())]
+
+
+def apply_overrides() -> None:
+    """Copy vendored DisasterIQ files over upstream xView2 (idempotent, always wins)."""
+    if not OVERRIDES.is_dir():
+        return
+    for src in sorted(OVERRIDES.rglob("*")):
+        if not src.is_file() or src.suffix != ".py":
+            continue
+        rel = src.relative_to(OVERRIDES)
+        dst = XVIEW2_ROOT / rel
+        if not dst.parent.is_dir():
+            raise SystemExit(f"Missing parent for override {rel} — clone xView2 first")
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        py_compile.compile(str(dst), doraise=True)
+        print(f"Applied override {rel}")
 
 
 def patch_loader() -> None:
@@ -207,7 +225,11 @@ def patch_unet() -> None:
 
 
 def patch_main() -> None:
-    """Port main.py Trainer construction to PyTorch Lightning 1.9.x."""
+    """Port main.py Trainer construction to PyTorch Lightning 1.9.x (fallback if no override)."""
+    override = OVERRIDES / "main.py"
+    if override.is_file():
+        print(f"Skipped patch_main — using override {override.name}")
+        return
     if not MAIN.exists():
         raise SystemExit(f"Missing {MAIN} — clone michal2409/xView2 into ml/pytorch-xview2")
     text = MAIN.read_text(encoding="utf-8")
@@ -268,29 +290,28 @@ def patch_main() -> None:
 
 def patch_torch_load() -> None:
     """PyTorch 2.x defaults weights_only=True; Lightning .ckpt files need False."""
+    if (OVERRIDES / "main.py").is_file():
+        print("Skipped patch_torch_load — override main.py already has weights_only=False")
+        return
     if not MAIN.exists():
         return
+    import re
+
     text = MAIN.read_text(encoding="utf-8")
-    if "weights_only=False" in text:
+    if "weights_only=False" in text and 'torch.load(args.ckpt_pre' in text:
         print(f"Already patched: {MAIN} (torch.load)")
         return
-    replacements = [
-        (
-            'torch.load(args.ckpt_pre, map_location={"cuda:0": "cpu"})',
-            'torch.load(args.ckpt_pre, map_location="cpu", weights_only=False)',
-        ),
-        (
-            "torch.load(args.ckpt_pre, map_location={'cuda:0': 'cpu'})",
-            'torch.load(args.ckpt_pre, map_location="cpu", weights_only=False)',
-        ),
-    ]
-    for old, new in replacements:
-        if old in text:
-            text = text.replace(old, new)
-            MAIN.write_text(text, encoding="utf-8")
-            py_compile.compile(str(MAIN), doraise=True)
-            print(f"Patched {MAIN} (torch.load weights_only=False)")
-            return
+
+    new_text, n = re.subn(
+        r'torch\.load\(\s*args\.ckpt_pre\s*,\s*map_location\s*=\s*[^)]+\)',
+        'torch.load(args.ckpt_pre, map_location="cpu", weights_only=False)',
+        text,
+    )
+    if n:
+        MAIN.write_text(new_text, encoding="utf-8")
+        py_compile.compile(str(MAIN), doraise=True)
+        print(f"Patched {MAIN} (torch.load weights_only=False, {n} site(s))")
+        return
     print(f"WARN: no torch.load(ckpt_pre) line found in {MAIN}")
 
 
@@ -334,12 +355,26 @@ def patch_data_module() -> None:
 
 
 def patch_loss() -> None:
-    """MONAI >=1.x expects B×C×H×W; xView2 damage loss passes flattened [N, C] pixels."""
+    """MONAI >=1.x + flattened damage pixels — use vendored loss.py when present."""
+    override = OVERRIDES / "model" / "loss.py"
+    if override.is_file():
+        print(f"Skipped patch_loss — using override {override.relative_to(OVERRIDES)}")
+        return
     if not LOSS.exists():
         raise SystemExit(f"Missing {LOSS} — clone michal2409/xView2 into ml/pytorch-xview2")
     text = LOSS.read_text(encoding="utf-8")
     if MONAI_SPATIAL_MARKER in text:
-        print(f"Already patched: {LOSS}")
+        if "use_softmax=True" in text:
+            py_compile.compile(str(LOSS), doraise=True)
+            print(f"Already patched: {LOSS}")
+            return
+        text = text.replace(
+            "self.focal = FocalLoss(gamma=2.0)",
+            "self.focal = FocalLoss(gamma=2.0, use_softmax=True, to_onehot_y=True)",
+        )
+        LOSS.write_text(text, encoding="utf-8")
+        py_compile.compile(str(LOSS), doraise=True)
+        print(f"Repaired focal line in {LOSS}")
         return
 
     text = text.replace(
@@ -402,6 +437,7 @@ def ensure_xview2_data_layout(data_root: Path) -> None:
 
 
 def main() -> None:
+    apply_overrides()
     patch_loader()
     patch_plt()
     patch_f1()

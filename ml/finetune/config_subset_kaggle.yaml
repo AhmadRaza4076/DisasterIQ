@@ -32,6 +32,7 @@ damage:
   batch_size: 4
   val_batch_size: 4
   num_workers: 4
+  precision: 32
   gpus: 1
   results_dir: /kaggle/working/results/dmg
   ckpt_pre: /kaggle/working/results/loc/checkpoints/best.ckpt
