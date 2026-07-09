@@ -76,6 +76,17 @@ docker run --rm --device=/dev/kfd --device=/dev/dri \
 
 **Time box:** 4–6 hours. Stop and ship TF baseline if not converging.
 
+## Kaggle GPU (no AMD access)
+
+See [docs/KAGGLE_FINETUNE.md](../../docs/KAGGLE_FINETUNE.md) and `notebooks/kaggle_finetune.ipynb` for CUDA fine-tuning on Kaggle using pre-built `train_subset`.
+
+```powershell
+.\scripts\zip_train_subset.ps1
+# Upload zip to Kaggle → run notebook with GPU enabled
+```
+
+Config: `ml/finetune/config_subset_kaggle.yaml` (5+8 epochs). Pipeline: `ml/finetune/run_kaggle_pipeline.sh`.
+
 ## Integrating checkpoint
 
 After training, copy best damage checkpoint:

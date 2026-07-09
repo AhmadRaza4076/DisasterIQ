@@ -8,6 +8,7 @@ Usage (bash):
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -17,7 +18,7 @@ except ImportError:
     print("pip install pyyaml", file=sys.stderr)
     raise
 
-CONFIG = Path(__file__).resolve().parent / "config_subset.yaml"
+_DEFAULT_CONFIG = Path(__file__).resolve().parent / "config_subset.yaml"
 
 SECTION_KEYS = {
     "localization": {
@@ -36,12 +37,28 @@ SECTION_KEYS = {
 }
 
 
+def resolve_config(explicit: Path | None = None) -> Path:
+    if explicit is not None:
+        return explicit
+    env_path = os.environ.get("FINETUNE_CONFIG")
+    if env_path:
+        return Path(env_path)
+    return _DEFAULT_CONFIG
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("section", choices=["localization", "damage", "data"])
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML config path (default: FINETUNE_CONFIG or config_subset.yaml)",
+    )
     args = parser.parse_args()
 
-    cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    config_path = resolve_config(args.config)
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if args.section == "data":
         data = cfg.get("data", {})
         print(f'export DATA_DIR="{data.get("train_dir", "/data/train_subset")}"')

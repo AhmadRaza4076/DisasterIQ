@@ -4,7 +4,11 @@ set -euo pipefail
 FINETUNE_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$FINETUNE_DIR/../pytorch-xview2"
 
-eval "$(python3 "$FINETUNE_DIR/load_config.py" localization)"
+CONFIG_ARGS=()
+if [[ -n "${FINETUNE_CONFIG:-}" ]]; then
+  CONFIG_ARGS=(--config "$FINETUNE_CONFIG")
+fi
+eval "$(python3 "$FINETUNE_DIR/load_config.py" "${CONFIG_ARGS[@]}" localization)"
 
 DATA_DIR="${DATA_DIR:-/data/train_subset}"
 RESULTS_DIR="${RESULTS_DIR:-/results/loc}"
