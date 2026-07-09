@@ -7,7 +7,7 @@ FINETUNE_DIR="$REPO_ROOT/ml/finetune"
 
 echo "=== ROCm GPU check ==="
 rocm-smi || true
-python3 -c "import torch; print('cuda:', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no gpu')"
+python3 -c "import torch; print('cuda:', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no gpu')" || echo "WARN: torch not importable"
 
 if [[ ! -d "$REPO_ROOT/ml/pytorch-xview2" ]]; then
   echo "Missing ml/pytorch-xview2 — clone michal2409/xView2 first."

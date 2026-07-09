@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
 import shutil
 import uuid
 from pathlib import Path
 
+import anyio
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from PIL import Image, UnidentifiedImageError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
@@ -18,6 +21,7 @@ from app.services.scoring import score_mask
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/tiff"}
+DEMO_PAIR_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 app = FastAPI(
     title="Disaster Damage Triage API",
@@ -70,44 +74,38 @@ def _validate_upload(upload: UploadFile) -> None:
         raise HTTPException(status_code=400, detail="Image exceeds 25 MB upload limit")
 
 
-@app.post("/analyze", response_model=AnalysisResult)
-async def analyze(
-    pre_image: UploadFile | None = File(None),
-    post_image: UploadFile | None = File(None),
-    demo_pair_id: str | None = Form(None),
-) -> AnalysisResult:
-    job_id = uuid.uuid4().hex
-    job_dir = settings.upload_dir / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-    out_dir = settings.output_dir / job_id
-
-    if demo_pair_id:
-        demo_img = settings.demo_data_dir / "images"
-        pre_path = demo_img / f"{demo_pair_id}_pre_disaster.png"
-        post_path = demo_img / f"{demo_pair_id}_post_disaster.png"
-        if not pre_path.exists() or not post_path.exists():
-            raise HTTPException(status_code=404, detail=f"Demo pair not found: {demo_pair_id}")
-    else:
-        if pre_image is None or post_image is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Provide pre_image and post_image uploads, or demo_pair_id",
-            )
-        _validate_upload(pre_image)
-        _validate_upload(post_image)
-        pre_path = job_dir / (pre_image.filename or "pre.png")
-        post_path = job_dir / (post_image.filename or "post.png")
-        with pre_path.open("wb") as f:
-            shutil.copyfileobj(pre_image.file, f)
-        with post_path.open("wb") as f:
-            shutil.copyfileobj(post_image.file, f)
-        if pre_path.stat().st_size > MAX_UPLOAD_BYTES or post_path.stat().st_size > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=400, detail="Image exceeds 25 MB upload limit")
-
+def _save_upload(upload: UploadFile, dest: Path, job_dir: Path) -> None:
+    """Stream an upload to disk, aborting (and cleaning up) if it exceeds the size cap."""
+    written = 0
+    chunk_size = 1024 * 1024
     try:
-        mask_path, mode, confidence_path = run_inference(pre_path, post_path, out_dir)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        with dest.open("wb") as f:
+            while chunk := upload.file.read(chunk_size):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=400, detail="Image exceeds 25 MB upload limit"
+                    )
+                f.write(chunk)
+    except HTTPException:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+    try:
+        with Image.open(dest) as img:
+            img.verify()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from exc
+
+
+def _run_analysis_pipeline(
+    pre_path: Path,
+    post_path: Path,
+    out_dir: Path,
+    demo_pair_id: str | None,
+) -> AnalysisResult:
+    """Synchronous inference + scoring + geo enrichment (run off the event loop)."""
+    mask_path, mode, confidence_path = run_inference(pre_path, post_path, out_dir)
     result = score_mask(
         mask_path,
         grid_rows=settings.grid_rows,
@@ -124,6 +122,48 @@ async def analyze(
     return result
 
 
+@app.post("/analyze", response_model=AnalysisResult)
+async def analyze(
+    pre_image: UploadFile | None = File(None),
+    post_image: UploadFile | None = File(None),
+    demo_pair_id: str | None = Form(None),
+) -> AnalysisResult:
+    job_id = uuid.uuid4().hex
+    job_dir = settings.upload_dir / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = settings.output_dir / job_id
+
+    if demo_pair_id:
+        if not DEMO_PAIR_ID_RE.match(demo_pair_id):
+            raise HTTPException(status_code=400, detail="Invalid demo_pair_id")
+        demo_img = settings.demo_data_dir / "images"
+        pre_path = demo_img / f"{demo_pair_id}_pre_disaster.png"
+        post_path = demo_img / f"{demo_pair_id}_post_disaster.png"
+        if not pre_path.exists() or not post_path.exists():
+            raise HTTPException(status_code=404, detail=f"Demo pair not found: {demo_pair_id}")
+    else:
+        if pre_image is None or post_image is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide pre_image and post_image uploads, or demo_pair_id",
+            )
+        _validate_upload(pre_image)
+        _validate_upload(post_image)
+        pre_name = Path(pre_image.filename or "pre.png").name or "pre.png"
+        post_name = Path(post_image.filename or "post.png").name or "post.png"
+        pre_path = job_dir / pre_name
+        post_path = job_dir / post_name
+        _save_upload(pre_image, pre_path, job_dir)
+        _save_upload(post_image, post_path, job_dir)
+
+    try:
+        return await anyio.to_thread.run_sync(
+            _run_analysis_pipeline, pre_path, post_path, out_dir, demo_pair_id
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @app.post("/brief", response_model=BriefResponse)
 async def brief(body: BriefRequest) -> BriefResponse:
     return await generate_brief(body.analysis, body.context)
@@ -132,8 +172,11 @@ async def brief(body: BriefRequest) -> BriefResponse:
 @app.post("/report/pdf")
 async def report_pdf(body: ReportRequest) -> Response:
     pair_id = body.analysis.get("pair_id")
-    pdf_bytes = build_field_report_pdf(body.analysis, body.brief, pair_id=pair_id)
-    filename = f"disasteriq-report-{pair_id or 'analysis'}.pdf"
+    pdf_bytes = await anyio.to_thread.run_sync(
+        lambda: build_field_report_pdf(body.analysis, body.brief, pair_id=pair_id)
+    )
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(pair_id)) if pair_id else ""
+    filename = f"disasteriq-report-{safe_id or 'analysis'}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -149,5 +192,5 @@ async def analyze_and_brief(
     context: str | None = Form(None),
 ) -> dict:
     analysis = await analyze(pre_image=pre_image, post_image=post_image, demo_pair_id=demo_pair_id)
-    brief_resp = await generate_brief(analysis.model_dump(), context)
+    brief_resp = await generate_brief(analysis.model_dump(exclude={"mask_base64"}), context)
     return {"analysis": analysis, "brief": brief_resp}

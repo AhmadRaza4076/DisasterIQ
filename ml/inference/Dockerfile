@@ -17,7 +17,7 @@ RUN groupadd -g 999 appuser 2>/dev/null || true && \
 ADD https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5 \
     /home/appuser/.keras/models/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5
 
-RUN chmod -R 777 /home/appuser/
+RUN chown -R appuser:appuser /home/appuser/ && chmod -R u+rwX /home/appuser/
 
 USER appuser
 WORKDIR /home/appuser

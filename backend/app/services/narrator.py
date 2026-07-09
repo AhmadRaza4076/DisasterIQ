@@ -62,6 +62,9 @@ def _stub_brief(analysis: dict[str, Any], context: str | None) -> str:
 
 
 async def generate_brief(analysis: dict[str, Any], context: str | None = None) -> BriefResponse:
+    analysis.pop("mask_base64", None)
+    if context is not None and len(context) > 2000:
+        context = context[:2000]
     if not settings.fireworks_api_key:
         return BriefResponse(brief=_stub_brief(analysis, context), source="stub")
 
@@ -90,7 +93,7 @@ async def generate_brief(analysis: dict[str, Any], context: str | None = None) -
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
             return BriefResponse(brief=content.strip(), source="fireworks")
-    except httpx.HTTPError:
+    except (httpx.HTTPError, KeyError, IndexError, ValueError):
         return BriefResponse(
             brief=_stub_brief(analysis, context),
             source="fireworks-fallback",

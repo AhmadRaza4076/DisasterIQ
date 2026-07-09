@@ -68,7 +68,11 @@ def stub_diff_mask(pre_path: Path, post_path: Path, out_path: Path) -> Path:
     thresh = max(15, float(np.percentile(diff, 92)))
     building = diff > thresh
     mask = np.zeros(pre.shape, dtype=np.uint8)
-    mask[building] = np.where(diff[building] > thresh * 1.8, 4, 2)
+    band = diff[building]
+    classes = np.full(band.shape, 2, dtype=np.uint8)
+    classes[band > thresh * 1.5] = 3
+    classes[band > thresh * 2.2] = 4
+    mask[building] = classes
     Image.fromarray(mask, mode="L").save(out_path)
     return out_path
 

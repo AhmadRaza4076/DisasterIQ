@@ -46,9 +46,19 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _resolve_relative_paths(self) -> "Settings":
         self.demo_data_dir = _resolve_against_repo_root(self.demo_data_dir)
+        self.test_data_dir = _resolve_against_repo_root(self.test_data_dir)
         self.pytorch_checkpoint_path = _resolve_against_repo_root(self.pytorch_checkpoint_path)
         self.pytorch_repo_dir = _resolve_against_repo_root(self.pytorch_repo_dir)
         self.pytorch_inference_dir = _resolve_against_repo_root(self.pytorch_inference_dir)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_inference_mode(self) -> "Settings":
+        allowed = {"stub", "docker", "pytorch"}
+        if self.inference_mode.lower() not in allowed:
+            raise ValueError(
+                f"Invalid INFERENCE_MODE '{self.inference_mode}'. Must be one of {sorted(allowed)}."
+            )
         return self
 
 

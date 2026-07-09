@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -18,14 +19,7 @@ from app.schemas import (
     Zone,
 )
 
-# xView2 class pixel values
-CLASS_NAMES = {
-    0: "background",
-    1: "none",
-    2: "minor",
-    3: "major",
-    4: "destroyed",
-}
+logger = logging.getLogger(__name__)
 
 # Overlay colors (RGBA) for frontend legend
 OVERLAY_COLORS = {
@@ -126,7 +120,11 @@ def score_mask(
     mask = load_mask(mask_path)
     confidence: np.ndarray | None = None
     if confidence_path is not None and confidence_path.exists():
-        confidence = load_confidence(confidence_path, mask.shape)
+        try:
+            confidence = load_confidence(confidence_path, mask.shape)
+        except (ValueError, OSError) as exc:
+            logger.warning("Failed to load confidence from %s: %s", confidence_path, exc)
+            confidence = None
     h, w = mask.shape
     cell_h = max(1, h // grid_rows)
     cell_w = max(1, w // grid_cols)

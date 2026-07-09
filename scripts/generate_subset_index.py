@@ -24,9 +24,11 @@ from tqdm import tqdm
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def get_foreground(img_pre: np.ndarray, img_post: np.ndarray) -> slice:
+def get_foreground(img_pre: np.ndarray, img_post: np.ndarray):
     h_pre, w_pre, _ = np.where(img_pre > 0)
     h_post, w_post, _ = np.where(img_post > 0)
+    if h_pre.size == 0 or h_post.size == 0:
+        return None
     min_h = max(int(min(h_pre)), int(min(h_post)))
     max_h = min(int(max(h_pre)), int(max(h_post)))
     min_w = max(int(min(w_pre)), int(min(w_post)))
@@ -47,7 +49,10 @@ def get_row(
     img_pre = cv2.imread(imgs_pre[idx])
     if img_post is None or img_pre is None:
         return None
-    crop = img_post[get_foreground(img_pre, img_post)]
+    fg = get_foreground(img_pre, img_post)
+    if fg is None:
+        return None
+    crop = img_post[fg]
     if crop.shape[0] < 512 or crop.shape[1] < 512:
         return None
     row: dict = {"idx": idx, "1": 0, "2": 0, "3": 0, "4": 0}

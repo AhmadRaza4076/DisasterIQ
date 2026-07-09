@@ -15,15 +15,7 @@ sys.path.insert(0, str(REPO / "backend"))
 from app.config import settings  # noqa: E402
 from app.services.inference import resolve_demo_target, run_docker_inference  # noqa: E402
 
-
-def mask_iou(a: np.ndarray, b: np.ndarray) -> float:
-  building_a = a > 0
-  building_b = b > 0
-  union = building_a | building_b
-  if not union.any():
-    return 1.0
-  inter = building_a & building_b
-  return float(inter.sum() / union.sum())
+from compare_models import mask_iou  # noqa: E402
 
 
 def main() -> None:

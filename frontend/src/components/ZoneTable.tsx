@@ -18,13 +18,13 @@ export default function ZoneTable({ analysis }: Props) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-700">
-              <th className="pb-2 pr-4">Rank</th>
-              <th className="pb-2 pr-4">Score</th>
-              <th className="pb-2 pr-4">Confidence</th>
-              <th className="pb-2 pr-4">Destroyed</th>
-              <th className="pb-2 pr-4">Major</th>
-              <th className="pb-2 pr-4">Minor</th>
-              <th className="pb-2">OK</th>
+              <th scope="col" className="pb-2 pr-4">Rank</th>
+              <th scope="col" className="pb-2 pr-4">Score</th>
+              <th scope="col" className="pb-2 pr-4">Confidence</th>
+              <th scope="col" className="pb-2 pr-4">Destroyed</th>
+              <th scope="col" className="pb-2 pr-4">Major</th>
+              <th scope="col" className="pb-2 pr-4">Minor</th>
+              <th scope="col" className="pb-2">OK</th>
             </tr>
           </thead>
           <tbody>

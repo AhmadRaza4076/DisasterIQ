@@ -1,18 +1,46 @@
-name: backend-tests
+name: ci
 on: [push, pull_request]
 
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r backend/requirements.txt pyyaml
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - run: pip install -r backend/requirements-dev.txt
       - name: Run backend tests
         working-directory: backend
         env:
           DEMO_DATA_DIR: ${{ github.workspace }}/data/demo
           INFERENCE_MODE: stub
         run: python -m pytest tests/ -v
+      - name: Run ML inference tests
+        working-directory: ml/pytorch-inference
+        run: python -m pytest tests/ -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+      - name: Build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: npm run build

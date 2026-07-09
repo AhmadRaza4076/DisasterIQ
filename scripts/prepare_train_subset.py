@@ -12,6 +12,8 @@ import argparse
 import shutil
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 KEEP_PREFIXES = (
     "mexico-earthquake",
     "midwest-flooding",
@@ -24,7 +26,7 @@ KEEP_PREFIXES = (
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--train-dir", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, default=Path("data/train_subset"))
+    parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "data" / "train_subset")
     args = parser.parse_args()
 
     xbd_root = args.train_dir

@@ -5,17 +5,23 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    restart: unless-stopped
     volumes:
       - ./data/demo:/app/data/demo:ro
       - ./backend/app/uploads:/app/app/uploads
       - ./backend/app/outputs:/app/app/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DEMO_DATA_DIR=/app/data/demo
       - INFERENCE_MODE=${INFERENCE_MODE:-stub}
       - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:-}
       - FIREWORKS_MODEL=${FIREWORKS_MODEL:-accounts/fireworks/models/glm-5p2}
       - XVIEW2_DOCKER_IMAGE=${XVIEW2_DOCKER_IMAGE:-darknem-xview2-inference}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   frontend:
     build:
@@ -25,10 +31,12 @@ services:
         NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
       - "3000:3000"
+    restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   # Build only: docker compose build ml
   # Run inference via backend when INFERENCE_MODE=docker

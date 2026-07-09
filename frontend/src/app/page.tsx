@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import BriefPanel from "@/components/BriefPanel";
 import DamageCanvas from "@/components/DamageCanvas";
@@ -41,6 +41,16 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
+  const requestToken = useRef(0);
+  const blobUrls = useRef<string[]>([]);
+
+  const setImageUrls = useCallback((pre: string, post: string, isBlob: boolean) => {
+    blobUrls.current.forEach((u) => URL.revokeObjectURL(u));
+    blobUrls.current = isBlob ? [pre, post] : [];
+    setPreUrl(pre);
+    setPostUrl(post);
+  }, []);
+
   useEffect(() => {
     fetchHealth()
       .then(setHealth)
@@ -54,9 +64,13 @@ export default function HomePage() {
   }, []);
 
   const runAnalysis = useCallback(async () => {
+    if (loading) return;
+    const token = ++requestToken.current;
     setLoading(true);
     setError(null);
+    setAnalysis(null);
     setBrief(null);
+    setBriefSource(null);
     setLoadingStage(
       health?.inference_mode === "docker"
         ? "Model inference (~2 min)…"
@@ -66,33 +80,43 @@ export default function HomePage() {
       let result: AnalysisResult;
       if (preFile && postFile) {
         result = await analyzeUpload(preFile, postFile);
-        setPreUrl(URL.createObjectURL(preFile));
-        setPostUrl(URL.createObjectURL(postFile));
+        if (token !== requestToken.current) return;
+        setImageUrls(URL.createObjectURL(preFile), URL.createObjectURL(postFile), true);
       } else if (selectedPair) {
         result = await analyzeDemoPair(selectedPair);
+        if (token !== requestToken.current) return;
         const pair = pairs.find((p) => p.id === selectedPair);
         if (pair) {
-          setPreUrl(demoImageUrl(pair.pre_image));
-          setPostUrl(demoImageUrl(pair.post_image));
+          setImageUrls(demoImageUrl(pair.pre_image), demoImageUrl(pair.post_image), false);
         }
       } else {
         throw new Error("Select a demo pair or upload images");
       }
+      if (token !== requestToken.current) return;
       setAnalysis(result);
 
       setBriefLoading(true);
       setLoadingStage("Generating situation brief…");
-      const briefResp = await fetchBrief(result, PAKISTAN_CONTEXT);
-      setBrief(briefResp.brief);
-      setBriefSource(briefResp.source);
+      try {
+        const briefResp = await fetchBrief(result, PAKISTAN_CONTEXT);
+        if (token !== requestToken.current) return;
+        setBrief(briefResp.brief);
+        setBriefSource(briefResp.source);
+      } catch (briefErr) {
+        if (token === requestToken.current) {
+          setError(`Analysis complete, brief failed: ${String(briefErr)}`);
+        }
+      }
     } catch (e) {
-      setError(String(e));
+      if (token === requestToken.current) setError(String(e));
     } finally {
-      setLoading(false);
-      setBriefLoading(false);
-      setLoadingStage(null);
+      if (token === requestToken.current) {
+        setLoading(false);
+        setBriefLoading(false);
+        setLoadingStage(null);
+      }
     }
-  }, [preFile, postFile, selectedPair, pairs, health?.inference_mode]);
+  }, [loading, preFile, postFile, selectedPair, pairs, health?.inference_mode, setImageUrls]);
 
   const downloadReport = useCallback(async () => {
     if (!analysis || !brief) return;
@@ -146,13 +170,18 @@ export default function HomePage() {
         <div className="lg:col-span-1 space-y-4 rounded-lg border border-slate-700 bg-slate-900/40 p-4">
           <h2 className="font-semibold text-slate-200">Imagery input</h2>
 
-          <label className="block text-sm text-slate-400">Demo pair (xBD — earthquake &amp; flood)</label>
+          <label htmlFor="demo-pair-select" className="block text-sm text-slate-400">Demo pair (xBD — earthquake &amp; flood)</label>
           <select
+            id="demo-pair-select"
             value={selectedPair}
             onChange={(e) => {
               setSelectedPair(e.target.value);
               setPreFile(null);
               setPostFile(null);
+              setAnalysis(null);
+              setBrief(null);
+              setBriefSource(null);
+              setImageUrls("", "", false);
             }}
             className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-slate-100"
             disabled={pairs.length === 0}
@@ -170,16 +199,18 @@ export default function HomePage() {
 
           <div className="text-center text-xs text-slate-500">— or upload custom pair —</div>
 
-          <label className="block text-sm text-slate-400">Pre-disaster image</label>
+          <label htmlFor="pre-image-input" className="block text-sm text-slate-400">Pre-disaster image</label>
           <input
+            id="pre-image-input"
             type="file"
             accept="image/*"
             onChange={(e) => setPreFile(e.target.files?.[0] ?? null)}
             className="w-full text-sm text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-700 file:px-2 file:py-1 file:text-slate-200"
           />
 
-          <label className="block text-sm text-slate-400">Post-disaster image</label>
+          <label htmlFor="post-image-input" className="block text-sm text-slate-400">Post-disaster image</label>
           <input
+            id="post-image-input"
             type="file"
             accept="image/*"
             onChange={(e) => setPostFile(e.target.files?.[0] ?? null)}
@@ -189,6 +220,7 @@ export default function HomePage() {
           <button
             onClick={runAnalysis}
             disabled={loading || (pairs.length === 0 && !(preFile && postFile))}
+            aria-busy={loading}
             className="w-full rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 px-4 py-2.5 font-medium text-white transition shadow-lg shadow-amber-900/20"
           >
             {loading ? (loadingStage ?? "Analyzing…") : "Analyze & brief"}
@@ -198,7 +230,7 @@ export default function HomePage() {
             <p className="text-xs text-amber-400/90 animate-pulse">{loadingStage}</p>
           )}
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p aria-live="polite" className="text-red-400 text-sm">{error}</p>}
 
           {analysis && (
             <p className="text-xs text-slate-500">

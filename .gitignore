@@ -14,8 +14,10 @@ data/tier3_subset/
 data/_kaggle_staging/
 data/_kaggle_staging_tier3/
 data/_kaggle_staging_train-nested/
+data/_demo_staging/
 data/curate_log.txt
 backend/outputs/
+backend/uploads/
 backend/app/outputs/
 backend/smoke_analyze.json
 backend/smoke_brief.json

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
 import type { AnalysisResult } from "@/lib/api";
 import "leaflet/dist/leaflet.css";
@@ -36,6 +36,18 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
 }
 
 export default function ZoneMap({ analysis }: Props) {
+  const geoZones = useMemo(
+    () =>
+      (analysis?.zones ?? []).filter(
+        (z) => z.centroid_lat != null && z.centroid_lng != null
+      ),
+    [analysis]
+  );
+  const positions = useMemo<[number, number][]>(
+    () => geoZones.map((z) => [z.centroid_lat!, z.centroid_lng!] as [number, number]),
+    [geoZones]
+  );
+
   if (!analysis) return null;
 
   if (!analysis.geo_available) {
@@ -46,14 +58,14 @@ export default function ZoneMap({ analysis }: Props) {
     );
   }
 
-  const geoZones = analysis.zones.filter(
-    (z) => z.centroid_lat != null && z.centroid_lng != null
-  );
-  if (geoZones.length === 0) return null;
+  if (geoZones.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-500">
+        Geo metadata present, but no zone centroids resolved for this pair.
+      </div>
+    );
+  }
 
-  const positions: [number, number][] = geoZones.map(
-    (z) => [z.centroid_lat!, z.centroid_lng!] as [number, number]
-  );
   const center = positions[0];
 
   return (

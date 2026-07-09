@@ -6,6 +6,8 @@ import argparse
 import shutil
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 # Tier3 disasters useful for hackathon scope (hazard diversity)
 TIER3_KEEP_PREFIXES = (
     "portugal-wildfire",
@@ -20,8 +22,8 @@ TIER3_KEEP_PREFIXES = (
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tier3-dir", type=Path, default=Path("data/tier3"))
-    parser.add_argument("--output-dir", type=Path, default=Path("data/tier3_subset"))
+    parser.add_argument("--tier3-dir", type=Path, default=REPO_ROOT / "data" / "tier3")
+    parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "data" / "tier3_subset")
     args = parser.parse_args()
 
     src = args.tier3_dir

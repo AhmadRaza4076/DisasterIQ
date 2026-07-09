@@ -34,6 +34,7 @@ export interface AnalysisSummary {
 export interface AnalysisResult {
   zones: Zone[];
   summary: AnalysisSummary;
+  mask_path?: string | null;
   mask_base64?: string | null;
   pair_id?: string | null;
   inference_mode: string;
@@ -60,14 +61,24 @@ export interface HealthResponse {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const TIMEOUT_ANALYZE = 300_000;
+const TIMEOUT_BRIEF = 90_000;
+const TIMEOUT_DEFAULT = 30_000;
+
 export async function fetchHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE}/health`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_DEFAULT),
+  });
   if (!res.ok) throw new Error("Backend unavailable");
   return res.json();
 }
 
 export async function fetchDemoPairs(): Promise<DemoPair[]> {
-  const res = await fetch(`${API_BASE}/demo/pairs`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE}/demo/pairs`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_DEFAULT),
+  });
   if (!res.ok) throw new Error("Failed to load demo pairs");
   return res.json();
 }
@@ -75,7 +86,11 @@ export async function fetchDemoPairs(): Promise<DemoPair[]> {
 export async function analyzeDemoPair(pairId: string): Promise<AnalysisResult> {
   const form = new FormData();
   form.append("demo_pair_id", pairId);
-  const res = await fetch(`${API_BASE}/analyze`, { method: "POST", body: form });
+  const res = await fetch(`${API_BASE}/analyze`, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(TIMEOUT_ANALYZE),
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -87,7 +102,11 @@ export async function analyzeUpload(
   const form = new FormData();
   form.append("pre_image", pre);
   form.append("post_image", post);
-  const res = await fetch(`${API_BASE}/analyze`, { method: "POST", body: form });
+  const res = await fetch(`${API_BASE}/analyze`, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(TIMEOUT_ANALYZE),
+  });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -100,6 +119,7 @@ export async function fetchBrief(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ analysis, context }),
+    signal: AbortSignal.timeout(TIMEOUT_BRIEF),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -113,11 +133,12 @@ export async function fetchFieldReport(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ analysis, brief }),
+    signal: AbortSignal.timeout(TIMEOUT_DEFAULT),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.blob();
 }
 
 export function demoImageUrl(filename: string): string {
-  return `${API_BASE}/demo/images/${filename}`;
+  return `${API_BASE}/demo/images/${encodeURIComponent(filename)}`;
 }
