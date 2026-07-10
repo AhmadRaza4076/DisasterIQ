@@ -401,6 +401,8 @@ def train_dmg(
     dmg_results = results_root / "dmg"
     if not skip_damage_smoke:
         smoke_damage_inprocess(data_dir, results_root, config_path)
+    else:
+        print("Skipping damage smoke test — training directly")
     run_cmd(
         [
             sys.executable,
@@ -470,9 +472,9 @@ def main() -> None:
         help="Skip test_pytorch_dataset.py after prep (faster dmg resume)",
     )
     parser.add_argument(
-        "--skip-damage-smoke",
+        "--run-damage-smoke",
         action="store_true",
-        help="Skip one-batch GPU smoke test before damage training",
+        help="Run one-batch GPU smoke test before damage training (off by default)",
     )
     args = parser.parse_args()
 
@@ -504,7 +506,7 @@ def main() -> None:
             args.data_dir,
             args.results_root,
             args.config,
-            skip_damage_smoke=args.skip_damage_smoke,
+            skip_damage_smoke=not args.run_damage_smoke,
         )
 
     if args.stage in ("dmg", "all"):

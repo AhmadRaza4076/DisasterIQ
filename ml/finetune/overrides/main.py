@@ -124,7 +124,7 @@ if __name__ == "__main__":
         max_epochs=args.epochs,
         min_epochs=args.epochs,
         sync_batchnorm=args.gpus > 1,
-        strategy="ddp" if args.gpus > 1 else "auto",
+        strategy="ddp" if args.gpus > 1 else None,
         default_root_dir=args.results,
         resume_from_checkpoint=checkpoint,
     )

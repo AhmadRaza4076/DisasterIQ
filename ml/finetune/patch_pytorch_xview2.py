@@ -319,7 +319,7 @@ def patch_main() -> None:
 
             # accelerator="ddp" is not valid in PL 1.9; use strategy instead
             if stripped.startswith("accelerator="):
-                out.append(f'{indent}strategy="ddp" if args.gpus > 1 else "auto",')
+                out.append(f'{indent}strategy="ddp" if args.gpus > 1 else None,')
                 continue
 
             out.append(line)
