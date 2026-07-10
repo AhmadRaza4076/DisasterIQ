@@ -155,7 +155,7 @@ def export_damage_checkpoint(results_root: Path, export_path: Path) -> None:
     print(f"WARN: no .ckpt files in {dmg_dir}")
 
 
-def run_cmd(cmd: list[str], *, cwd: Path, env: dict | None = None) -> None:
+def run_cmd(cmd: list[str], *, cwd: Path, env: dict | None = None, live: bool = True) -> None:
     merged = os.environ.copy()
     merged["PYTHONUNBUFFERED"] = "1"
     if env:
@@ -163,9 +163,27 @@ def run_cmd(cmd: list[str], *, cwd: Path, env: dict | None = None) -> None:
     if cmd and cmd[0] == sys.executable and "-u" not in cmd:
         cmd = [sys.executable, "-u", *cmd[1:]]
     print("Running:", " ".join(cmd))
-    result = subprocess.run(cmd, cwd=str(cwd), env=merged)
+    if live:
+        result = subprocess.run(cmd, cwd=str(cwd), env=merged)
+    else:
+        result = subprocess.run(cmd, cwd=str(cwd), env=merged, capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        if result.stderr:
+            print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
     if result.returncode != 0:
         raise SystemExit(result.returncode)
+
+
+def purge_xview2_modules() -> None:
+    xview2 = str(XVIEW2_ROOT)
+    for name in list(sys.modules):
+        mod = sys.modules[name]
+        path = getattr(mod, "__file__", "") or ""
+        if name.startswith(("model", "data_loading", "utils")) or xview2 in path:
+            del sys.modules[name]
+    if xview2 not in sys.path:
+        sys.path.insert(0, xview2)
 
 
 def load_yaml_section(config_path: Path, section: str) -> dict:
@@ -178,6 +196,7 @@ def load_yaml_section(config_path: Path, section: str) -> dict:
 def verify_patches() -> None:
     loss_path = XVIEW2_ROOT / "model" / "loss.py"
     main_path = XVIEW2_ROOT / "main.py"
+    plt_path = XVIEW2_ROOT / "model" / "plt.py"
     if not loss_path.is_file():
         raise FileNotFoundError(f"Missing {loss_path}")
     loss_text = loss_path.read_text(encoding="utf-8")
@@ -191,19 +210,86 @@ def verify_patches() -> None:
             raise RuntimeError("main.py missing torch.load patch — re-run patch_pytorch_xview2.py")
         if "checkpoint_callback=" in main_text:
             raise RuntimeError("main.py still uses PL 1.0 checkpoint_callback — re-run patches")
+    if plt_path.is_file():
+        plt_text = plt_path.read_text(encoding="utf-8")
+        if "from apex.optimizers import" in plt_text and "FusedAdam = torch.optim.Adam" not in plt_text:
+            raise RuntimeError("model/plt.py missing apex fallback — re-run patch_pytorch_xview2.py")
     print("xView2 patches verified")
 
 
-def smoke_damage(data_dir: Path, results_root: Path, config_path: Path) -> None:
-    """One training batch — catches loss/OOM errors before multi-hour run."""
-    _ = data_dir, config_path
+def smoke_damage_inprocess(data_dir: Path, results_root: Path, config_path: Path) -> None:
+    """One training batch in-process so tracebacks appear in the notebook."""
+    from argparse import Namespace
+
+    import torch
+
+    purge_xview2_modules()
+    from data_loading.data_module import DataModule  # noqa: E402
+    from model.plt import Model  # noqa: E402
+
     loc_ckpt = resolve_checkpoint(results_root / "loc" / "checkpoints" / "best.ckpt")
     print(f"Smoke test with loc checkpoint: {loc_ckpt}")
-    run_cmd(
-        [sys.executable, str(FINETUNE_DIR / "smoke_damage_step.py")],
-        cwd=REPO_ROOT,
-        env={"XVIEW2_INDEX_CSV": str(INDEX_CSV), "KAGGLE_WORKING": str(WORKING)},
+    dmg_cfg = load_yaml_section(config_path, "damage")
+
+    args = Namespace(
+        exec_mode="train",
+        data=str(data_dir),
+        results=str(results_root / "dmg"),
+        gpus=1,
+        num_workers=0,
+        batch_size=2,
+        val_batch_size=2,
+        precision=int(dmg_cfg.get("precision", 32)),
+        epochs=1,
+        patience=100,
+        ckpt=None,
+        logname="logs",
+        ckpt_pre=str(loc_ckpt),
+        type="post",
+        seed=1,
+        interpolate=False,
+        optimizer="adamw",
+        dmg_model="siamese",
+        encoder=str(dmg_cfg.get("encoder", "resnet50")),
+        loss_str=str(dmg_cfg.get("loss_str", "focal+dice")),
+        use_scheduler=False,
+        warmup=1,
+        init_lr=1e-4,
+        final_lr=1e-4,
+        lr=3e-4,
+        weight_decay=0,
+        momentum=0.9,
+        dilation=1,
+        tta=False,
+        ppm=False,
+        aspp=False,
+        no_skip=False,
+        deep_supervision=True,
+        attention=True,
+        autoaugment=False,
+        dec_interp=False,
     )
+
+    os.makedirs(args.results, exist_ok=True)
+    os.environ["XVIEW2_INDEX_CSV"] = str(INDEX_CSV)
+
+    dm = DataModule(args)
+    batch = next(iter(dm.train_dataloader()))
+
+    model = Model(args).cuda()
+    if loc_ckpt.is_file():
+        state = torch.load(str(loc_ckpt), map_location="cpu", weights_only=False)["state_dict"]
+        keys = model.state_dict()
+        for name, tensor in state.items():
+            if "enc" in name and name in keys:
+                model.state_dict()[name].copy_(tensor)
+
+    img = batch["image"].cuda()
+    lbl = batch["mask"].cuda()
+    pred = model.model(img)
+    loss = model.compute_loss(pred, lbl)
+    loss.backward()
+    print(f"SMOKE OK: loss={loss.item():.4f} batch={tuple(img.shape)}")
 
 
 def prep_stage(data_dir: Path, config_path: Path, *, skip_smoke_test: bool = False) -> None:
@@ -288,6 +374,8 @@ def train_dmg(
     results_root: Path,
     config_path: Path,
     ckpt_pre: Path | None = None,
+    *,
+    skip_damage_smoke: bool = False,
 ) -> None:
     ensure_results_dirs(results_root)
     loc_ckpt_dir = results_root / "loc" / "checkpoints"
@@ -311,7 +399,8 @@ def train_dmg(
 
     dmg_cfg = load_yaml_section(config_path, "damage")
     dmg_results = results_root / "dmg"
-    smoke_damage(data_dir, results_root, config_path)
+    if not skip_damage_smoke:
+        smoke_damage_inprocess(data_dir, results_root, config_path)
     run_cmd(
         [
             sys.executable,
@@ -380,6 +469,11 @@ def main() -> None:
         action="store_true",
         help="Skip test_pytorch_dataset.py after prep (faster dmg resume)",
     )
+    parser.add_argument(
+        "--skip-damage-smoke",
+        action="store_true",
+        help="Skip one-batch GPU smoke test before damage training",
+    )
     args = parser.parse_args()
 
     os.chdir(REPO_ROOT)
@@ -406,7 +500,12 @@ def main() -> None:
         train_loc(args.data_dir, args.results_root, args.config)
 
     if args.stage in ("dmg", "all"):
-        train_dmg(args.data_dir, args.results_root, args.config)
+        train_dmg(
+            args.data_dir,
+            args.results_root,
+            args.config,
+            skip_damage_smoke=args.skip_damage_smoke,
+        )
 
     if args.stage in ("dmg", "all"):
         export_damage_checkpoint(args.results_root, args.export)

@@ -84,6 +84,14 @@ def apply_overrides() -> None:
         print(f"Applied override {rel}")
 
 
+def clear_pycache() -> None:
+    import shutil
+
+    for cache in XVIEW2_ROOT.rglob("__pycache__"):
+        shutil.rmtree(cache, ignore_errors=True)
+    print("Cleared xView2 __pycache__")
+
+
 def patch_loader() -> None:
     if not LOADER.exists():
         raise SystemExit(f"Missing {LOADER} — clone michal2409/xView2 into ml/pytorch-xview2")
@@ -198,6 +206,49 @@ def patch_f1() -> None:
     F1_FILE.write_text(text, encoding="utf-8")
     py_compile.compile(str(F1_FILE), doraise=True)
     print(f"Patched {F1_FILE} (torchmetrics.Metric)")
+
+
+def patch_unet_torchvision() -> None:
+    """torchvision >=0.13 uses weights= instead of deprecated pretrained=."""
+    if not UNET.exists():
+        return
+    text = UNET.read_text(encoding="utf-8")
+    if "_disasteriq_resnet" in text:
+        print(f"Already patched: {UNET} (torchvision weights)")
+        return
+
+    helper = '''
+def _disasteriq_resnet(pretrained, replace_stride_with_dilation, depth=50):
+    """DisasterIQ: torchvision >=0.13 uses weights= instead of pretrained=."""
+    import torchvision.models as _models
+    factories = {50: _models.resnet50, 101: _models.resnet101, 152: _models.resnet152}
+    factory = factories[depth]
+    try:
+        weights_cls = getattr(_models, f"ResNet{depth}_Weights")
+        weights = weights_cls.DEFAULT if pretrained else None
+        return factory(weights=weights, replace_stride_with_dilation=replace_stride_with_dilation)
+    except Exception:
+        return factory(pretrained=pretrained, replace_stride_with_dilation=replace_stride_with_dilation)
+'''
+    anchor = "from model.layers import ASPP, PPM, FusionBlock, OutputBlock, UpsampleBlock"
+    if anchor not in text:
+        raise SystemExit(f"Expected layers import in {UNET}")
+    text = text.replace(anchor, f"{anchor}\n{helper}", 1)
+    text = text.replace(
+        "encoder = models.resnet50(pretrained=pretrained, replace_stride_with_dilation=replace_stride_with_dilation)",
+        "encoder = _disasteriq_resnet(pretrained, replace_stride_with_dilation, depth=50)",
+    )
+    text = text.replace(
+        "encoder = models.resnet101(pretrained=pretrained, replace_stride_with_dilation=replace_stride_with_dilation)",
+        "encoder = _disasteriq_resnet(pretrained, replace_stride_with_dilation, depth=101)",
+    )
+    text = text.replace(
+        "encoder = models.resnet152(pretrained=pretrained, replace_stride_with_dilation=replace_stride_with_dilation)",
+        "encoder = _disasteriq_resnet(pretrained, replace_stride_with_dilation, depth=152)",
+    )
+    UNET.write_text(text, encoding="utf-8")
+    py_compile.compile(str(UNET), doraise=True)
+    print(f"Patched {UNET} (torchvision weights API)")
 
 
 def patch_unet() -> None:
@@ -442,10 +493,12 @@ def main() -> None:
     patch_plt()
     patch_f1()
     patch_unet()
+    patch_unet_torchvision()
     patch_main()
     patch_torch_load()
     patch_data_module()
     patch_loss()
+    clear_pycache()
     # generate_idx.py is intentionally left unpatched/unused — superseded by
     # scripts/generate_subset_index.py, which generates index.csv scoped to
     # our actual train_subset instead of the full original xView2 dataset.
