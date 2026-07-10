@@ -191,6 +191,30 @@ def patch_plt() -> None:
     print(f"Patched {PLT} (apex -> torch.optim fallback)")
 
 
+def patch_plt_deep_supervision() -> None:
+    """Use nearest-neighbor when downsampling integer damage masks for deep supervision."""
+    if not PLT.exists():
+        return
+    text = PLT.read_text(encoding="utf-8")
+    marker = 'mode="nearest"'
+    if marker in text and "downsampled_label" in text:
+        print(f"Already patched: {PLT} (deep supervision labels)")
+        return
+    old = "downsampled_label = torch.nn.functional.interpolate(label.unsqueeze(1), pred.shape[2:])"
+    new = (
+        "downsampled_label = torch.nn.functional.interpolate("
+        "label.unsqueeze(1).float(), pred.shape[2:], mode=\"nearest\""
+        ")"
+    )
+    if old not in text:
+        print(f"WARN: deep supervision interpolate line not found in {PLT}")
+        return
+    text = text.replace(old, new)
+    PLT.write_text(text, encoding="utf-8")
+    py_compile.compile(str(PLT), doraise=True)
+    print(f"Patched {PLT} (nearest-neighbor label downsample)")
+
+
 def patch_f1() -> None:
     """pytorch_lightning.metrics was removed in PL 1.3; use torchmetrics instead."""
     if not F1_FILE.exists():
@@ -491,6 +515,7 @@ def main() -> None:
     apply_overrides()
     patch_loader()
     patch_plt()
+    patch_plt_deep_supervision()
     patch_f1()
     patch_unet()
     patch_unet_torchvision()

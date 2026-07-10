@@ -25,7 +25,8 @@ class MonaiLoss(nn.Module):
 
     @staticmethod
     def _flat_focal(y_pred: torch.Tensor, y_true: torch.Tensor, gamma: float = 2.0) -> torch.Tensor:
-        y_true = y_true.long()
+        n_classes = y_pred.shape[1]
+        y_true = y_true.long().clamp(0, n_classes - 1)
         log_prob = F.log_softmax(y_pred, dim=1)
         prob = log_prob.exp()
         ce = F.nll_loss(log_prob, y_true, reduction="none")
@@ -40,7 +41,7 @@ class MonaiLoss(nn.Module):
         *,
         include_background: bool,
     ) -> torch.Tensor:
-        y_true = y_true.long()
+        y_true = y_true.long().clamp(0, n_classes - 1)
         probs = F.softmax(y_pred, dim=1)
         y_onehot = F.one_hot(y_true, num_classes=n_classes).float()
         start = 0 if include_background else 1
@@ -141,7 +142,9 @@ class Loss(nn.Module):
             device = y_pred.device
             mask = y_true > 0
             y_pred = torch.stack([y_pred[:, i][mask] for i in range(y_pred.shape[1])], 1).to(device)
-            y_true = y_true[mask] - 1
+            # xBD labels are 1–4 on building pixels; model has 4 logits (classes 0–3).
+            # Clamp handles 255 artifacts and bad values from bilinear label downsampling.
+            y_true = (y_true[mask].float() - 1).round().clamp(0, y_pred.shape[1] - 1)
 
         if self.loss_str == "mse":
             y_pred = F.relu(y_pred[:, 0], inplace=True)
