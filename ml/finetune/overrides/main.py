@@ -1,8 +1,21 @@
 import os
+import shutil
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from subprocess import call
 
 import torch
+
+# PyTorch 2.6+ defaults weights_only=True; Lightning .ckpt files need False.
+_orig_torch_load = torch.load
+
+
+def _torch_load_trusted(*args, **kwargs):
+    kwargs.setdefault("weights_only", False)
+    return _orig_torch_load(*args, **kwargs)
+
+
+torch.load = _torch_load_trusted
+
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -18,8 +31,9 @@ except Exception:  # pynvml/NVML may be unavailable on Kaggle
 
 
 def make_empty_dir(path):
-    call(["rm", "-rf", path])
-    os.makedirs(path)
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path, exist_ok=True)
 
 
 def set_cuda_devices(gpus):
@@ -75,6 +89,7 @@ if __name__ == "__main__":
     model_ckpt = None
     if args.exec_mode == "train":
         model = Model(args)
+        # Best-by-F1 (updated on each validation). save_last also refreshes last.ckpt.
         model_ckpt = ModelCheckpoint(
             monitor="f1_score",
             mode="max",
@@ -82,9 +97,18 @@ if __name__ == "__main__":
             filename="best",
             save_top_k=1,
         )
+        # Mid-epoch safety net for flaky Kaggle sessions: write a step ckpt without
+        # waiting for a full epoch (upstream only checkpointed at epoch end).
+        step_ckpt = ModelCheckpoint(
+            filename="step",
+            every_n_train_steps=400,
+            save_top_k=1,
+            save_on_train_epoch_end=False,
+        )
         callbacks = [
             EarlyStopping(monitor="f1_score", patience=args.patience, verbose=True, mode="max"),
             model_ckpt,
+            step_ckpt,
         ]
     else:
         assert args.ckpt is not None, "No checkpoint found for evaluation"
@@ -113,10 +137,12 @@ if __name__ == "__main__":
                 if name in keys:
                     model.state_dict()[name].copy_(tensor)
 
+    # val_check_interval=0.25 → validate + F1 checkpoint 4x per epoch (not once).
+    # Critical on Kaggle interactive sessions that die mid-epoch.
     trainer = Trainer(
         gpus=args.gpus,
         logger=False,
-        precision=args.precision,
+        precision=args.precision if args.gpus > 0 else 32,
         benchmark=True,
         deterministic=False,
         num_sanity_val_steps=0,
@@ -126,7 +152,8 @@ if __name__ == "__main__":
         sync_batchnorm=args.gpus > 1,
         strategy="ddp" if args.gpus > 1 else None,
         default_root_dir=args.results,
-        resume_from_checkpoint=checkpoint,
+        resume_from_checkpoint=checkpoint if args.exec_mode == "train" else None,
+        val_check_interval=0.25 if args.exec_mode == "train" else 1.0,
     )
 
     if args.exec_mode == "train":
@@ -138,7 +165,7 @@ if __name__ == "__main__":
             make_empty_dir(pred_dir)
         if not os.path.exists(targets_dir):
             make_empty_dir(targets_dir)
-        trainer.test(model, test_dataloaders=data_module.test_dataloader())
+        trainer.test(model, dataloaders=data_module.test_dataloader())
 
     if "PL_TRAINER_GPUS" in os.environ:
         os.environ.pop("PL_TRAINER_GPUS")

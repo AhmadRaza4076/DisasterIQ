@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -40,6 +39,63 @@ def probs_to_mask_and_confidence(arr: np.ndarray) -> tuple[np.ndarray, np.ndarra
         return np.clip(mask, 0, 4), confidence
     mask = np.clip(np.round(arr).astype(np.uint8), 0, 4)
     return mask, None
+
+
+def _localize_checkpoint(checkpoint: Path, results_dir: Path) -> Path:
+    """Rewrite Kaggle paths baked into checkpoint hyperparameters for local eval."""
+    import torch
+    from argparse import Namespace
+
+    state = torch.load(str(checkpoint), map_location="cpu", weights_only=False)
+    hp = state.get("hyper_parameters")
+    if not isinstance(hp, dict):
+        return checkpoint
+
+    args = hp.get("args")
+    if isinstance(args, Namespace) and str(getattr(args, "results", "")).startswith("/kaggle"):
+        localized_args = Namespace(**{**vars(args), "results": str(results_dir)})
+        state["hyper_parameters"] = {**hp, "args": localized_args}
+        localized = results_dir / "_localized_checkpoint.ckpt"
+        torch.save(state, localized)
+        return localized
+    return checkpoint
+
+
+def _run_xview2_eval(data_root: Path, results: Path, ckpt_path: Path) -> None:
+    """In-process eval: load checkpoint and run one forward pass (no PL Trainer)."""
+    import torch
+
+    if str(XVIEW2_ROOT) not in sys.path:
+        sys.path.insert(0, str(XVIEW2_ROOT))
+
+    _orig = torch.load
+
+    def _torch_load_trusted(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _orig(*args, **kwargs)
+
+    torch.load = _torch_load_trusted
+
+    from data_loading.data_module import DataModule
+    from model.plt import Model
+
+    model = Model.load_from_checkpoint(str(ckpt_path), map_location="cpu")
+    model.args.data = str(data_root)
+    model.args.results = str(results)
+    model.args.gpus = 0
+    model.args.precision = 32
+    model.args.num_workers = 0
+    model.args.val_batch_size = 1
+    model.eval()
+
+    (results / "probs").mkdir(parents=True, exist_ok=True)
+    (results / "targets").mkdir(parents=True, exist_ok=True)
+
+    loader = DataModule(model.args).test_dataloader()
+    with torch.no_grad():
+        for batch in loader:
+            pred = model.forward(batch["image"])
+            model.save(pred, batch["mask"])
 
 
 def infer_pair(
@@ -72,41 +128,13 @@ def infer_pair(
     _dummy_mask(tgt_dir / pre_name)
     _dummy_mask(tgt_dir / post_name)
 
-    cmd = [
-        sys.executable,
-        str(MAIN_PY),
-        "--exec_mode",
-        "eval",
-        "--type",
-        "post",
-        "--dmg_model",
-        "siamese",
-        "--encoder",
-        "resnet50",
-        "--loss_str",
-        "focal+dice",
-        "--data",
-        str(data_root),
-        "--results",
-        str(results),
-        "--ckpt",
-        str(checkpoint),
-        "--gpus",
-        "0",
-        "--val_batch_size",
-        "1",
-        "--num_workers",
-        "0",
-    ]
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(XVIEW2_ROOT),
-    }
+    ckpt_for_eval = _localize_checkpoint(checkpoint, results)
+
     index_src = XVIEW2_ROOT / "utils" / "index.csv"
     if index_src.exists():
-        env["XVIEW2_INDEX_CSV"] = str(index_src.resolve())
+        os.environ["XVIEW2_INDEX_CSV"] = str(index_src.resolve())
 
-    subprocess.run(cmd, check=True, cwd=str(XVIEW2_ROOT), env=env)
+    _run_xview2_eval(data_root, results, ckpt_for_eval)
 
     probs_dir = results / "probs"
     npy_files = sorted(probs_dir.glob("test_damage_*.npy"))

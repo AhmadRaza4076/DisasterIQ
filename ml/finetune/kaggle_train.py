@@ -376,6 +376,8 @@ def train_dmg(
     ckpt_pre: Path | None = None,
     *,
     skip_damage_smoke: bool = False,
+    resume_ckpt: Path | None = None,
+    auto_resume: bool = True,
 ) -> None:
     ensure_results_dirs(results_root)
     loc_ckpt_dir = results_root / "loc" / "checkpoints"
@@ -399,45 +401,72 @@ def train_dmg(
 
     dmg_cfg = load_yaml_section(config_path, "damage")
     dmg_results = results_root / "dmg"
-    if not skip_damage_smoke:
+    dmg_ckpt_dir = dmg_results / "checkpoints"
+
+    # Resume mid-damage if a prior damage ckpt exists (last/best/step).
+    if resume_ckpt is None and auto_resume and dmg_ckpt_dir.is_dir():
+        for name in ("last.ckpt", "best.ckpt"):
+            candidate = dmg_ckpt_dir / name
+            if candidate.is_file():
+                resume_ckpt = candidate
+                break
+        if resume_ckpt is None:
+            steps = sorted(
+                dmg_ckpt_dir.glob("step*.ckpt"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if steps:
+                resume_ckpt = steps[0]
+
+    if not skip_damage_smoke and resume_ckpt is None:
         smoke_damage_inprocess(data_dir, results_root, config_path)
     else:
         print("Skipping damage smoke test — training directly")
+
+    cmd = [
+        sys.executable,
+        "main.py",
+        "--exec_mode",
+        "train",
+        "--type",
+        "post",
+        "--dmg_model",
+        "siamese",
+        "--data",
+        str(data_dir),
+        "--results",
+        str(dmg_results),
+        "--encoder",
+        str(dmg_cfg.get("encoder", "resnet50")),
+        "--loss_str",
+        str(dmg_cfg.get("loss_str", "focal+dice")),
+        "--ckpt_pre",
+        str(resolved),
+        "--attention",
+        "--deep_supervision",
+        "--gpus",
+        "1",
+        "--precision",
+        str(dmg_cfg.get("precision", 32)),
+        "--num_workers",
+        str(dmg_cfg.get("num_workers", 4)),
+        "--batch_size",
+        str(dmg_cfg.get("batch_size", 4)),
+        "--val_batch_size",
+        str(dmg_cfg.get("val_batch_size", dmg_cfg.get("batch_size", 4))),
+        "--epochs",
+        str(dmg_cfg.get("epochs", 8)),
+    ]
+    if resume_ckpt is not None and Path(resume_ckpt).is_file():
+        # Lightning resume_from_checkpoint — continues optimizer/epoch, not from scratch
+        cmd.extend(["--ckpt", str(resume_ckpt)])
+        print(f"Resuming damage training from {resume_ckpt}")
+    else:
+        print("Starting damage training from scratch (loc encoder via --ckpt_pre)")
+
     run_cmd(
-        [
-            sys.executable,
-            "main.py",
-            "--exec_mode",
-            "train",
-            "--type",
-            "post",
-            "--dmg_model",
-            "siamese",
-            "--data",
-            str(data_dir),
-            "--results",
-            str(dmg_results),
-            "--encoder",
-            str(dmg_cfg.get("encoder", "resnet50")),
-            "--loss_str",
-            str(dmg_cfg.get("loss_str", "focal+dice")),
-            "--ckpt_pre",
-            str(resolved),
-            "--attention",
-            "--deep_supervision",
-            "--gpus",
-            "1",
-            "--precision",
-            str(dmg_cfg.get("precision", 32)),
-            "--num_workers",
-            str(dmg_cfg.get("num_workers", 4)),
-            "--batch_size",
-            str(dmg_cfg.get("batch_size", 4)),
-            "--val_batch_size",
-            str(dmg_cfg.get("val_batch_size", dmg_cfg.get("batch_size", 4))),
-            "--epochs",
-            str(dmg_cfg.get("epochs", 8)),
-        ],
+        cmd,
         cwd=XVIEW2_ROOT,
         env={"XVIEW2_INDEX_CSV": str(INDEX_CSV)},
     )
@@ -451,6 +480,40 @@ def require_gpu() -> None:
             "CUDA not available. Kaggle: Settings → Accelerator → GPU T4 x2, save, re-run."
         )
     print(f"GPU: {torch.cuda.get_device_name(0)}")
+
+
+def stage_kaggle_input(data_dir: Path) -> Path:
+    """Merge Kaggle input datasets into data_dir when running on Kaggle."""
+    input_root = Path(os.environ.get("KAGGLE_INPUT", "/kaggle/input"))
+    if not input_root.is_dir():
+        return data_dir
+    combined = data_dir.parent / "combined_subset"
+    if combined.is_dir() and (combined / "images").is_dir():
+        return combined
+    if data_dir.is_dir() and (data_dir / "images").is_dir():
+        return data_dir
+
+    stage_script = REPO_ROOT / "scripts" / "stage_kaggle_data.py"
+    if not stage_script.is_file():
+        return data_dir
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(stage_script),
+            "--input-root",
+            str(input_root),
+            "--dest",
+            str(data_dir),
+            "--combined-dest",
+            str(combined),
+        ],
+        check=True,
+        cwd=str(REPO_ROOT),
+    )
+    if combined.is_dir() and (combined / "images").is_dir():
+        return combined
+    return data_dir
 
 
 def main() -> None:
@@ -476,10 +539,22 @@ def main() -> None:
         action="store_true",
         help="Run one-batch GPU smoke test before damage training (off by default)",
     )
+    parser.add_argument(
+        "--resume-ckpt",
+        type=Path,
+        default=None,
+        help="Damage Lightning ckpt to resume (default: auto last/best/step under results/dmg)",
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Force fresh damage training even if dmg checkpoints exist",
+    )
     args = parser.parse_args()
 
     os.chdir(REPO_ROOT)
     os.environ.setdefault("FINETUNE_CONFIG", str(args.config.resolve()))
+    args.data_dir = stage_kaggle_input(args.data_dir)
 
     if not args.skip_deps:
         ensure_runtime_deps()
@@ -507,6 +582,8 @@ def main() -> None:
             args.results_root,
             args.config,
             skip_damage_smoke=not args.run_damage_smoke,
+            resume_ckpt=args.resume_ckpt,
+            auto_resume=not args.no_resume,
         )
 
     if args.stage in ("dmg", "all"):

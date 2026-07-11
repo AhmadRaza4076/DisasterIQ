@@ -1,5 +1,10 @@
 # Fine-tuning config — Kaggle GPU (CUDA T4/P100)
 # Paths under /kaggle/working; override with env vars in run_kaggle_pipeline.sh
+#
+# Checkpointing (overrides/main.py):
+#   - val_check_interval=0.25 → F1 validate/save 4x per epoch
+#   - every_n_train_steps=400 → mid-epoch step-*.ckpt safety net
+# Prefer Kaggle "Save Version → Save & Run All" over interactive cell-by-cell.
 
 data:
   train_dir: /kaggle/working/data/train_subset

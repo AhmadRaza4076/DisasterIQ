@@ -71,17 +71,27 @@ if [[ ! -d "$REPO_ROOT/ml/pytorch-xview2" ]]; then
   exit 1
 fi
 
-SRC_SUBSET="$(find_train_subset)"
-if [[ -z "$SRC_SUBSET" || ! -d "$SRC_SUBSET/images" ]]; then
-  echo "ERROR: Could not find train_subset under $INPUT_ROOT" >&2
-  exit 1
-fi
+echo "=== Stage training data (merge train_subset + tier3 if both attached) ==="
 DEST_SUBSET="$WORKING/data/train_subset"
-if [[ "$SRC_SUBSET" != "$DEST_SUBSET" ]]; then
-  echo "=== Staging train_subset: $SRC_SUBSET -> $DEST_SUBSET ==="
-  mkdir -p "$WORKING/data"
-  rm -rf "$DEST_SUBSET"
-  cp -a "$SRC_SUBSET" "$DEST_SUBSET"
+if [[ -d "$WORKING/data/combined_subset/images" ]]; then
+  DEST_SUBSET="$WORKING/data/combined_subset"
+else
+  python3 "$REPO_ROOT/scripts/stage_kaggle_data.py" \
+    --input-root "$INPUT_ROOT" \
+    --dest "$WORKING/data/train_subset" \
+    --combined-dest "$WORKING/data/combined_subset" || {
+    SRC_SUBSET="$(find_train_subset)"
+    if [[ -z "$SRC_SUBSET" || ! -d "$SRC_SUBSET/images" ]]; then
+      echo "ERROR: Could not find train_subset under $INPUT_ROOT" >&2
+      exit 1
+    fi
+    mkdir -p "$WORKING/data"
+    rm -rf "$DEST_SUBSET"
+    cp -a "$SRC_SUBSET" "$DEST_SUBSET"
+  }
+  if [[ -d "$WORKING/data/combined_subset/images" ]]; then
+    DEST_SUBSET="$WORKING/data/combined_subset"
+  fi
 fi
 export DATA_DIR="$DEST_SUBSET"
 

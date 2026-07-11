@@ -156,7 +156,7 @@ def run_pytorch_inference(pre_path: Path, post_path: Path, out_dir: Path) -> tup
         "--out",
         str(out_mask.resolve()),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
     if result.returncode != 0:
         raise RuntimeError(f"PyTorch inference failed: {result.stderr or result.stdout}")
     if not out_mask.exists():
