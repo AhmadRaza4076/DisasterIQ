@@ -118,9 +118,21 @@ INDEX_OUT="$REPO_ROOT/ml/pytorch-xview2/utils/index.csv"
 export XVIEW2_INDEX_CSV="$INDEX_OUT"
 
 echo "=== Generate index.csv for $DATA_DIR ==="
-if [[ -f "$INDEX_OUT" ]] && [[ "$(wc -l < "$INDEX_OUT")" -gt 1 ]]; then
-  echo "index.csv already exists ($(wc -l < "$INDEX_OUT") lines) — skipping regeneration"
-else
+# Do not trust a pre-existing index.csv (xView2 clone often has full-train ~8k rows).
+# Validate max(idx) against this data_dir; regenerate when stale.
+NEED_INDEX=1
+N_PRE=$(find "$DATA_DIR/images" -name '*pre*' 2>/dev/null | wc -l | tr -d ' ')
+if [[ -f "$INDEX_OUT" ]] && [[ "$(wc -l < "$INDEX_OUT")" -gt 1 ]] && [[ "${N_PRE:-0}" -gt 0 ]]; then
+  MAX_IDX=$(python3 -c "import pandas as pd; df=pd.read_csv('$INDEX_OUT'); print(int(df['idx'].max()) if len(df) else -1)")
+  if [[ "$MAX_IDX" -ge 0 ]] && [[ "$MAX_IDX" -lt "$N_PRE" ]]; then
+    echo "index.csv OK (max_idx=$MAX_IDX < n_pre=$N_PRE) — keeping"
+    NEED_INDEX=0
+  else
+    echo "Stale index.csv (max_idx=$MAX_IDX, n_pre=$N_PRE) — regenerating"
+    rm -f "$INDEX_OUT"
+  fi
+fi
+if [[ "$NEED_INDEX" -eq 1 ]]; then
   python3 "$REPO_ROOT/scripts/generate_subset_index.py" \
     --data-dir "$DATA_DIR" \
     --out "$INDEX_OUT"

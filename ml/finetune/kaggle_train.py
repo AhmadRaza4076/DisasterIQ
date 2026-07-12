@@ -301,9 +301,35 @@ def prep_stage(data_dir: Path, config_path: Path, *, skip_smoke_test: bool = Fal
     verify_patches()
 
     os.environ["XVIEW2_INDEX_CSV"] = str(INDEX_CSV)
-    if INDEX_CSV.is_file() and INDEX_CSV.stat().st_size > 10:
-        print(f"index.csv OK ({sum(1 for _ in INDEX_CSV.open())} lines)")
-    else:
+    # Always validate idx range against this data_dir. Upstream/xView2 clones often
+    # ship a full-train index.csv (~8k rows) that crashes subset training with
+    # IndexError in load_pair — skipping regeneration caused Kaggle V1/V2 failures.
+    n_pre = len(list((data_dir / "images").glob("*pre*")))
+    if n_pre == 0 and (data_dir / "train" / "images").is_dir():
+        n_pre = len(list((data_dir / "train" / "images").glob("*pre*")))
+    needs_index = True
+    if INDEX_CSV.is_file() and INDEX_CSV.stat().st_size > 10 and n_pre > 0:
+        try:
+            import pandas as pd
+
+            df = pd.read_csv(INDEX_CSV)
+            max_idx = int(df["idx"].max()) if len(df) and "idx" in df.columns else -1
+            n_lines = len(df)
+            if 0 <= max_idx < n_pre:
+                print(
+                    f"index.csv OK ({n_lines} rows, max_idx={max_idx} < n_pre={n_pre})"
+                )
+                needs_index = False
+            else:
+                print(
+                    f"Stale index.csv (rows={n_lines}, max_idx={max_idx}, n_pre={n_pre}) "
+                    "— regenerating for this subset"
+                )
+        except Exception as exc:
+            print(f"index.csv unreadable ({exc}) — regenerating")
+    if needs_index:
+        if INDEX_CSV.is_file():
+            INDEX_CSV.unlink()
         subprocess.run(
             [
                 sys.executable,

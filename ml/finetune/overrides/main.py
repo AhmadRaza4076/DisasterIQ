@@ -17,10 +17,45 @@ def _torch_load_trusted(*args, **kwargs):
 torch.load = _torch_load_trusted
 
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import Callback, EarlyStopping, ModelCheckpoint
 
 from data_loading.data_module import DataModule
 from model.plt import Model
+
+
+class PeriodicWeightSave(Callback):
+    """Force-write weights on a step schedule (Kaggle file-browser friendly).
+
+    Lightning ModelCheckpoint + logger=False has been unreliable on Kaggle
+    Interactive (val 'improved' logs with no files under results/*/checkpoints).
+    This callback always writes to an explicit path and mirrors to /kaggle/working.
+    """
+
+    def __init__(self, dirpath: str, every_n_steps: int = 400, mirror_name: str = "train_mid.ckpt"):
+        super().__init__()
+        self.dirpath = dirpath
+        self.every_n_steps = every_n_steps
+        self.mirror_name = mirror_name
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        step = int(trainer.global_step)
+        if step <= 0 or step % self.every_n_steps != 0:
+            return
+        os.makedirs(self.dirpath, exist_ok=True)
+        payload = {
+            "epoch": int(trainer.current_epoch),
+            "global_step": step,
+            "state_dict": pl_module.state_dict(),
+            "pytorch-lightning_version": getattr(trainer, "lightning_version", "1.9.5"),
+        }
+        path = os.path.join(self.dirpath, "step.ckpt")
+        torch.save(payload, path)
+        mirror = os.path.join("/kaggle/working", self.mirror_name)
+        try:
+            shutil.copy2(path, mirror)
+        except OSError:
+            mirror = path
+        print(f"[PeriodicWeightSave] wrote {path} (step={step}, epoch={trainer.current_epoch}) mirror={mirror}")
 
 try:
     from utils.gpu_affinity import set_affinity
@@ -89,26 +124,26 @@ if __name__ == "__main__":
     model_ckpt = None
     if args.exec_mode == "train":
         model = Model(args)
+        ckpt_dir = os.path.join(args.results, "checkpoints")
+        os.makedirs(ckpt_dir, exist_ok=True)
+        print(f"Checkpoint dir (explicit): {ckpt_dir}")
         # Best-by-F1 (updated on each validation). save_last also refreshes last.ckpt.
+        # dirpath MUST be set — with logger=False PL may not create visible files otherwise.
         model_ckpt = ModelCheckpoint(
+            dirpath=ckpt_dir,
             monitor="f1_score",
             mode="max",
             save_last=True,
             filename="best",
             save_top_k=1,
+            verbose=True,
+            auto_insert_metric_name=False,
         )
-        # Mid-epoch safety net for flaky Kaggle sessions: write a step ckpt without
-        # waiting for a full epoch (upstream only checkpointed at epoch end).
-        step_ckpt = ModelCheckpoint(
-            filename="step",
-            every_n_train_steps=400,
-            save_top_k=1,
-            save_on_train_epoch_end=False,
-        )
+        mirror = "damage_mid.ckpt" if args.type == "post" else "loc_mid.ckpt"
         callbacks = [
             EarlyStopping(monitor="f1_score", patience=args.patience, verbose=True, mode="max"),
             model_ckpt,
-            step_ckpt,
+            PeriodicWeightSave(ckpt_dir, every_n_steps=400, mirror_name=mirror),
         ]
     else:
         assert args.ckpt is not None, "No checkpoint found for evaluation"

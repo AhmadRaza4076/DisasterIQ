@@ -2,7 +2,7 @@
 
 Fine-tune the PyTorch xView2 damage model on **Kaggle's free NVIDIA GPU** (T4/P100) using your pre-built `data/train_subset/`. No AMD GPU required.
 
-**Time box:** ~3–6 hours GPU for reduced epochs (5 loc + 8 damage). Full AMD config is 10+20 epochs.
+**Time box:** ~3–6 hours GPU for reduced epochs (5 loc + 5 damage). Full AMD config is 10+20 epochs.
 
 ## What you need from me (agent) vs you
 
@@ -154,7 +154,7 @@ PYTORCH_CHECKPOINT_PATH=ml/checkpoints/damage_best.ckpt
 
 | File | Purpose |
 |------|---------|
-| `ml/finetune/config_subset_kaggle.yaml` | 5 loc + 8 damage epochs, Kaggle paths, `num_workers: 4` |
+| `ml/finetune/config_subset_kaggle.yaml` | 5 loc + 5 damage epochs, Kaggle paths, `num_workers: 4` |
 | `ml/finetune/kaggle_train.py` | Unified bootstrap + staged training (recommended) |
 | `ml/finetune/requirements_kaggle.txt` | Pinned deps for xView2 on modern Kaggle |
 | `ml/finetune/patch_pytorch_xview2.py` | All xView2 compatibility patches (idempotent) |
